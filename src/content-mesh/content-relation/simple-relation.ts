@@ -1,5 +1,5 @@
-import { ContentRelationConfig, ContentRelation } from '..';
-import { ContentNode } from '../../content-node';
+import { ContentRelationConfig, ContentRelation } from '.';
+import { ContentNode } from '../content-node';
 
 export type SimpleContentRelationConfig = ContentRelationConfig;
 

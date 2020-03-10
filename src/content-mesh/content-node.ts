@@ -1,5 +1,5 @@
-import { ContentCollection } from '../content-collection';
-import { NodeRelation } from '../node-relation';
+import { ContentCollection } from './content-collection';
+import { NodeRelation } from './node-relation';
 
 export interface ContentNodeConfig {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

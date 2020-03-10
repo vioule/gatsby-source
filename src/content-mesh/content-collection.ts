@@ -1,6 +1,6 @@
 import { IField } from '@directus/sdk-js/dist/types/schemes/directus/Field';
 import { ICollectionDataSet } from '@directus/sdk-js/dist/types/schemes/response/Collection';
-import { ContentNode } from '../content-node';
+import { ContentNode } from './content-node';
 
 export interface ContentCollectionConfig {
   collection: ICollectionDataSet;

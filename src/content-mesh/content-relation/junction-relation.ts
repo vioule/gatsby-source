@@ -1,6 +1,6 @@
-import { ContentCollection } from '../../content-collection';
-import { ContentRelationConfig, ContentRelation } from '..';
-import { ContentNode } from '../../content-node';
+import { ContentCollection } from '../content-collection';
+import { ContentRelationConfig, ContentRelation } from '.';
+import { ContentNode } from '../content-node';
 
 export interface JunctionContentRelationConfig extends ContentRelationConfig {
   srcJunctionField: string;

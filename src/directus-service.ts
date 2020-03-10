@@ -6,7 +6,7 @@ import {
   ICollectionResponse,
   // ICollectionsResponse,
 } from '@directus/sdk-js/dist/types/schemes/response/Collection';
-import { log } from '../utils';
+import { log } from './utils';
 import { ILoginCredentials } from '@directus/sdk-js/dist/types/schemes/auth/Login';
 
 export interface DirectusServiceConfig {

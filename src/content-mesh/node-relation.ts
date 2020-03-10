@@ -1,4 +1,4 @@
-import { ContentNode } from '../content-node';
+import { ContentNode } from './content-node';
 
 export interface NodeRelationConfig {
   field: string;

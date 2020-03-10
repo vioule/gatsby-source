@@ -1,8 +1,8 @@
-import { ContentNode } from '../../content-mesh';
-import { GatsbyType } from '../gatsby-type';
-import { GatsbyProcessor } from '..';
+import { ContentNode } from '../content-mesh';
+import { GatsbyType } from './gatsby-type';
+import { GatsbyProcessor } from '.';
 import { createRemoteFileNode } from 'gatsby-source-filesystem';
-import { log } from '../../utils';
+import { log } from '../utils';
 
 export class GatsbyNode {
   protected _node: ContentNode;

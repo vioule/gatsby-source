@@ -1,7 +1,7 @@
 import Pluralize from 'pluralize';
-import { GatsbyProcessor } from '..';
-import { ContentCollection, ContentNode } from '../../content-mesh';
-import { GatsbyFileNode, GatsbyNode } from '../gatsby-node';
+import { GatsbyProcessor } from '.';
+import { ContentCollection, ContentNode } from '../content-mesh';
+import { GatsbyFileNode, GatsbyNode } from './gatsby-node';
 
 export class GatsbyType {
   private _nodes: GatsbyNode[];

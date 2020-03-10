@@ -1,7 +1,7 @@
-import { ContentCollection } from '../../content-collection';
-import { ContentRelation } from '..';
-import { ContentNode } from '../../content-node';
-import { ContentMesh } from '../..';
+import { ContentCollection } from '../content-collection';
+import { ContentRelation } from '../content-relation';
+import { ContentNode } from '../content-node';
+import { ContentMesh } from '..';
 
 export interface FileContentRelationConfig {
   fileTable: ContentCollection;
