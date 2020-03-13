@@ -1822,10 +1822,10 @@ functional-red-black-tree@^1.0.1:
   resolved "https://registry.yarnpkg.com/functional-red-black-tree/-/functional-red-black-tree-1.0.1.tgz#1b0ab3bd553b2a0d6399d29c0e3ea0b252078327"
   integrity sha1-GwqzvVU7Kg1jmdKcDj6gslIHgyc=
 
-gatsby-core-utils@^1.0.32:
-  version "1.0.32"
-  resolved "https://registry.yarnpkg.com/gatsby-core-utils/-/gatsby-core-utils-1.0.32.tgz#98859661c206ec1dac8511948857292569a90066"
-  integrity sha512-OmvjNhXyVCpI8ya3/LbzvyiD5Ee3rkH0bWSyBCs2tB8trCZJJ4LerXRMCYY0BI69XHXKOBECA6/B8yPSVGHL6w==
+gatsby-core-utils@^1.0.33:
+  version "1.0.33"
+  resolved "https://registry.yarnpkg.com/gatsby-core-utils/-/gatsby-core-utils-1.0.33.tgz#bd0d1ed0afed7f90c82c6da5b9ba13b727bcf1e9"
+  integrity sha512-eQkOQumfbMLdbKJN0E1dlnBjAKWAzexxuNdpL88yCIaqHGOMogGTmAmhG1Hs0sz9bMrNPxuIgEyDNQe3IDfJXw==
   dependencies:
     ci-info "2.0.0"
     configstore "^5.0.0"
@@ -1841,9 +1841,9 @@ gatsby-node-helpers@^0.3.0:
     p-is-promise "^1.1.0"
 
 gatsby-source-filesystem@^2.1.48:
-  version "2.1.52"
-  resolved "https://registry.yarnpkg.com/gatsby-source-filesystem/-/gatsby-source-filesystem-2.1.52.tgz#33162ed3fb3b90f8163fb3bba3be1db4b8fa91f3"
-  integrity sha512-wR6Vrpsf1ZO3u7AZUezmSpm3xP+wK152oVPl2DPcqXXYUFdAa09UDVeRd21fvhSsziUnZL53sglq4Uf4PxlWlA==
+  version "2.1.54"
+  resolved "https://registry.yarnpkg.com/gatsby-source-filesystem/-/gatsby-source-filesystem-2.1.54.tgz#2dc2fea19b166826ebeb2d9ddcc61d0abbaeffc3"
+  integrity sha512-dSGckQYePVvkAwcY6DxJE9+NmtRZqNeTtMQySkLUJ+qA3EiaBizqumrdthwdgiHdIDrwjspL8HIcJ2BjnI4wbA==
   dependencies:
     "@babel/runtime" "^7.7.6"
     better-queue "^3.8.10"
@@ -1851,7 +1851,7 @@ gatsby-source-filesystem@^2.1.48:
     chokidar "3.3.0"
     file-type "^12.4.0"
     fs-extra "^8.1.0"
-    gatsby-core-utils "^1.0.32"
+    gatsby-core-utils "^1.0.33"
     got "^8.3.2"
     md5-file "^3.2.3"
     mime "^2.4.4"
