@@ -7,17 +7,15 @@ import { IRelation } from '@directus/sdk-js/dist/types/schemes/directus/Relation
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
 import { ICollectionDataSet, ICollectionResponse } from '@directus/sdk-js/dist/types/schemes/response/Collection';
 import { log } from '../utils';
+import { ILoginCredentials } from '@directus/sdk-js/dist/types/schemes/auth/Login';
+import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
+import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
 
-export type EditableQueryParams = Omit<QueryParams, 'meta' | 'fields' | 'offset' | 'single'>;
-export type GlobalQueryParams = EditableQueryParams;
-export type CollectionSpecificQueryParams = EditableQueryParams;
-
-export interface ApiRequestConfig {
+export interface SdkOptions {
   maxResults?: number;
   pageSize?: number;
-  throttle?: number;
-  timeout?: number;
-  maxConcurrentRequests?: number;
+  requestThrottle?: number;
+  requestTimeout?: number;
 }
 
 export interface DirectusServiceConfig {
@@ -36,9 +34,12 @@ export interface DirectusServiceConfig {
   allowCollections?: string[] | void;
   blockCollections?: string[] | void;
 
-  apiRequestConfig?: ApiRequestConfig;
-  globalQueryParams?: GlobalQueryParams;
-  collectionQueryParamOverrides?: { [collectionName: string]: CollectionSpecificQueryParams };
+  sdkOptions?: {
+    global?: SdkOptions;
+    collectionSpecific?: {
+      [collection_name: string]: SdkOptions;
+    };
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customRecordFilter?: (record: any, collection: string) => boolean;
@@ -290,6 +291,16 @@ export class DirectusService implements DirectusServiceAdaptor {
   private _api: DirectusSDK;
   private _ready: Promise<void>;
 
+  private _maxResults: number = Number.POSITIVE_INFINITY;
+  private _pageSize = -1;
+  private _requestThrottle = 0;
+  private _requestTimeout?: number;
+
+  private _collectionSpecificOverrides: {
+    [collectionName: string]: SdkOptions;
+  } = {};
+  private _totalRecordsReceived = 0;
+
   constructor(config: DirectusServiceConfig) {
     log.info('Initializing Directus Service...');
 
@@ -311,16 +322,18 @@ export class DirectusService implements DirectusServiceAdaptor {
     this._url = config.url;
     this._project = config.project;
 
-    if (config.globalQueryParams) {
-      Object.assign(this._globalQueryParams, config.globalQueryParams);
-    }
-
-    if (config.collectionQueryParamOverrides) {
-      Object.assign(this._collectionQueryParams, config.collectionQueryParamOverrides);
-    }
-
-    if (config.apiRequestConfig) {
-      Object.assign(this._apiRequestConfig, config.apiRequestConfig);
+    if (config.sdkOptions) {
+      if (typeof config.sdkOptions.global?.maxResults === 'number')
+        this._maxResults = config.sdkOptions.global.maxResults;
+      if (typeof config.sdkOptions.global?.pageSize === 'number') this._pageSize = config.sdkOptions.global.pageSize;
+      if (typeof config.sdkOptions.global?.requestThrottle === 'number')
+        this._requestThrottle = config.sdkOptions.global.requestThrottle;
+      if (typeof config.sdkOptions.global?.requestTimeout === 'number')
+        this._requestTimeout = config.sdkOptions.global.requestTimeout;
+      this._collectionSpecificOverrides = Object.assign(
+        this._collectionSpecificOverrides,
+        config.sdkOptions.collectionSpecific,
+      );
     }
 
     this._api = this._initSDK(config);
@@ -517,9 +530,11 @@ export class DirectusService implements DirectusServiceAdaptor {
       await this._ready;
       log.info('Fetching all files...');
 
-      const { data = [] } = await this._api.getFiles({
-        limit: -1,
-      });
+      // const { data = [] } = await this._api.getFiles({
+      //   limit: -1,
+      // });
+
+      const data = await this._execPaginatedRequest(this._fileCollectionName, this._api.getFiles);
 
       // The SDK has 'data' typed as IFile[][], but in reality
       // it's returned as IFile[]
@@ -533,71 +548,71 @@ export class DirectusService implements DirectusServiceAdaptor {
     }
   }
 
-  // private async _execPaginatedRequest<R = unknown[]>(
-  //   collectionName: string,
-  //   request: (params: QueryParams) => Promise<IAPIResponse<R[], IAPIMetaList>>,
-  //   config = {},
-  // ): Promise<R[]> {
-  //   const bag: R[] = [];
-  //   let received = 0;
-  //   let totalRecords = Number.POSITIVE_INFINITY;
+  private async _execPaginatedRequest<R = unknown[]>(
+    collectionName: string,
+    request: (params: QueryParams) => Promise<IAPIResponse<R[], IAPIMetaList>>,
+    config = {},
+  ): Promise<R[]> {
+    const bag: R[] = [];
+    let received = 0;
+    let totalRecords = Number.POSITIVE_INFINITY;
 
-  //   try {
-  //     while (received < totalRecords && this._canFetchMore(collectionName, received)) {
-  //       const {
-  //         // eslint-disable-next-line @typescript-eslint/camelcase
-  //         meta: { result_count, total_count },
-  //         data,
-  //         error,
-  //       } = await request(this._buildPaginatedRequestConfig(config, collectionName, received));
+    try {
+      while (received < totalRecords && this._canFetchMore(collectionName, received)) {
+        const {
+          // eslint-disable-next-line @typescript-eslint/camelcase
+          meta: { result_count, total_count },
+          data,
+          error,
+        } = await request(this._buildPaginatedRequestConfig(config, collectionName, received));
 
-  //       if (error) {
-  //         throw new Error(error.message);
-  //       }
+        if (error) {
+          throw new Error(error.message);
+        }
 
-  //       // eslint-disable-next-line @typescript-eslint/camelcase
-  //       received += result_count;
-  //       // eslint-disable-next-line @typescript-eslint/camelcase
-  //       totalRecords = total_count;
-  //       // eslint-disable-next-line @typescript-eslint/camelcase
-  //       this._totalRecordsReceived += result_count;
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        received += result_count;
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        totalRecords = total_count;
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        this._totalRecordsReceived += result_count;
 
-  //       bag.push(...data);
-  //     }
-  //   } catch (e) {
-  //     log.error(
-  //       `An error was encountered fetching paginated records for collection: ${collectionName}. Returning results received so far (${bag.length} records).`,
-  //       e,
-  //     );
-  //   }
+        bag.push(...data);
+      }
+    } catch (e) {
+      log.error(
+        `An error was encountered fetching paginated records for collection: ${collectionName}. Returning results received so far (${bag.length} records).`,
+        e,
+      );
+    }
 
-  //   return bag;
-  // }
+    return bag;
+  }
 
-  // private _buildPaginatedRequestConfig(
-  //   givenConfig: QueryParams = {},
-  //   collectionName: string,
-  //   received: number,
-  // ): QueryParams {
-  //   return {
-  //     ...givenConfig,
-  //     offset: received,
-  //     limit: this._getRecordsRequestLimit(collectionName),
-  //   };
-  // }
+  private _buildPaginatedRequestConfig(
+    givenConfig: QueryParams = {},
+    collectionName: string,
+    received: number,
+  ): QueryParams {
+    return {
+      ...givenConfig,
+      offset: received,
+      limit: this._getRecordsRequestLimit(collectionName),
+    };
+  }
 
-  // private _getRecordsRequestLimit(collectionName: string): number {
-  //   return this._collectionSpecificOverrides[collectionName]?.pageSize ?? this._pageSize;
-  // }
+  private _getRecordsRequestLimit(collectionName: string): number {
+    return this._collectionSpecificOverrides[collectionName]?.pageSize ?? this._pageSize;
+  }
 
-  // private _canFetchMore(collectionName: string, receivedForCollection: number): boolean {
-  //   if (this._totalRecordsReceived >= this._maxResults) {
-  //     return false;
-  //   }
+  private _canFetchMore(collectionName: string, receivedForCollection: number): boolean {
+    if (this._totalRecordsReceived >= this._maxResults) {
+      return false;
+    }
 
-  //   return (
-  //     receivedForCollection >=
-  //     (this._collectionSpecificOverrides[collectionName]?.maxResults ?? Number.POSITIVE_INFINITY)
-  //   );
-  // }
+    return (
+      receivedForCollection >=
+      (this._collectionSpecificOverrides[collectionName]?.maxResults ?? Number.POSITIVE_INFINITY)
+    );
+  }
 }
