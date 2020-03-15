@@ -1,13 +1,25 @@
+import { validator } from './config-validator';
 import { ContentMesh } from './content-mesh';
-import { log } from './utils';
-import { DirectusServiceConfig, DirectusService } from './directus-service';
+import { DirectusService, DirectusServiceConfig } from './directus-service';
 import { GatsbyProcessor, GatsbyProcessorConfig } from './gatsby-processor';
+import { log } from './utils';
+
+export type PluginConfig = DirectusServiceConfig & GatsbyProcessorConfig;
 
 export const sourceNodes = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   gatsby: any,
-  config: DirectusServiceConfig & GatsbyProcessorConfig,
+  config: PluginConfig,
 ): Promise<void> => {
+  log.info(`Validating config...`);
+
+  const configErrors = validator.validate(config);
+
+  if (configErrors.length) {
+    configErrors.forEach(e => log.error(e));
+    throw new Error('INVALID_CONFIG');
+  }
+
   log.info(`Starting...`);
 
   log.info(`URL: ${config.url}`);
