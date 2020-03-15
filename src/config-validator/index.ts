@@ -3,8 +3,6 @@ import { DirectusServiceConfig, SdkOptions } from '../directus-service';
 
 export type ValidationResult = string[];
 
-export const Validators = {};
-
 export class ConfigValidator {
   public validate(config: PluginConfig): ValidationResult {
     return this._validateServiceConfig(config);
@@ -29,32 +27,6 @@ export class ConfigValidator {
     return errors;
   }
 
-  private _validateSdkOptionSet(options?: SdkOptions, keyPrefix = ''): ValidationResult {
-    if (!options) {
-      return [];
-    }
-
-    const errors: ValidationResult = [];
-
-    if (!this._isNullOrUndefined(options.maxResults)) {
-      errors.push(...this._validateNumber(`${keyPrefix}maxResults`, options.maxResults));
-    }
-
-    if (!this._isNullOrUndefined(options.pageSize)) {
-      errors.push(...this._validateNumber(`${keyPrefix}pageSize`, options.pageSize));
-    }
-
-    if (!this._isNullOrUndefined(options.requestThrottle)) {
-      errors.push(...this._validateNumber(`${keyPrefix}requestThrottle`, options.requestThrottle));
-    }
-
-    if (!this._isNullOrUndefined(options.requestTimeout)) {
-      errors.push(...this._validateNumber(`${keyPrefix}requestTimeout`, options.requestTimeout));
-    }
-
-    return errors;
-  }
-
   private _validateNonEmptyString(key: string, value: any): ValidationResult {
     if (!value) {
       return [this._formatMissingValueError(key)];
@@ -67,7 +39,23 @@ export class ConfigValidator {
     return [];
   }
 
-  private _validateNumber(key: string, val: any): ValidationResult {
+  private _validateSdkOptionSet(options?: SdkOptions, keyPrefix = ''): ValidationResult {
+    if (!options) {
+      return [];
+    }
+
+    return Object.keys(options).reduce(
+      (errs, key) => [...errs, ...this._validateSdkOptionValue(`${keyPrefix}${key}`, options[key as keyof SdkOptions])],
+      [] as ValidationResult,
+    );
+  }
+
+  private _validateSdkOptionValue(key: string, val: any): ValidationResult {
+    // Allow undefined or null skd options for all keys
+    if (typeof val === 'undefined' || val === null) {
+      return [];
+    }
+
     if (typeof val !== 'number') {
       return [this._formatInvalidTypeError(key, 'number', val)];
     } else if (isNaN(val)) {
@@ -77,10 +65,6 @@ export class ConfigValidator {
     }
 
     return [];
-  }
-
-  private _isNullOrUndefined(value: any): boolean {
-    return typeof value === 'undefined' || value === null;
   }
 
   private _formatInvalidTypeError(key: string, expected: string, received: any): string {

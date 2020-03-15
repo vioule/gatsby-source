@@ -1,6 +1,6 @@
 import { validator } from './config-validator';
 import { ContentMesh } from './content-mesh';
-import { DirectusService, DirectusServiceConfig, DirectusServiceAdaptor } from './directus-service';
+import { DirectusService, DirectusServiceConfig } from './directus-service';
 import { GatsbyProcessor, GatsbyProcessorConfig } from './gatsby-processor';
 import { log } from './utils';
 
@@ -16,7 +16,7 @@ export const sourceNodes = async (
   const configErrors = validator.validate(config);
 
   if (configErrors.length) {
-    configErrors.forEach((e) => log.error(e));
+    configErrors.forEach(e => log.error(e));
     throw new Error('INVALID_CONFIG');
   }
 
