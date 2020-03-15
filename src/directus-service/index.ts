@@ -8,6 +8,15 @@ import {
 } from '@directus/sdk-js/dist/types/schemes/response/Collection';
 import { log } from '../utils';
 import { ILoginCredentials } from '@directus/sdk-js/dist/types/schemes/auth/Login';
+import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
+import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
+
+export interface SdkOptions {
+  maxResults?: number;
+  pageSize?: number;
+  requestThrottle?: number;
+  requestTimeout?: number;
+}
 
 export interface DirectusServiceConfig {
   url: string;
@@ -24,6 +33,13 @@ export interface DirectusServiceConfig {
 
   allowCollections?: string[] | void;
   blockCollections?: string[] | void;
+
+  sdkOptions?: {
+    global?: SdkOptions;
+    collectionSpecific?: {
+      [collection_name: string]: SdkOptions;
+    };
+  };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customRecordFilter?: (record: any, collection: string) => boolean;
@@ -47,15 +63,17 @@ export class DirectusService {
   private _api: DirectusSDK;
   private _ready: Promise<void>;
 
-  constructor(config: DirectusServiceConfig) {
-    if (!config.project) {
-      log.error(`Required config option missing. No 'project' provided.`, { config });
-      throw new Error('MALFORMED_CONFIGURATION');
-    } else if (typeof config.project !== 'string') {
-      log.error(`The provided 'project' config option was invalid. Only strings accepted.`, { config });
-      throw new Error('MALFORMED_CONFIGURATION');
-    }
+  private _maxResults: number = Number.POSITIVE_INFINITY;
+  private _pageSize = -1;
+  private _requestThrottle = 0;
+  private _requestTimeout?: number;
 
+  private _collectionSpecificOverrides: {
+    [collectionName: string]: SdkOptions;
+  } = {};
+  private _totalRecordsReceived = 0;
+
+  constructor(config: DirectusServiceConfig) {
     log.info('Initializing Directus Service...');
 
     if (config.fileCollectionName) {
@@ -75,6 +93,20 @@ export class DirectusService {
 
     this._url = config.url;
     this._project = config.project;
+
+    if (config.sdkOptions) {
+      if (typeof config.sdkOptions.global?.maxResults === 'number')
+        this._maxResults = config.sdkOptions.global.maxResults;
+      if (typeof config.sdkOptions.global?.pageSize === 'number') this._pageSize = config.sdkOptions.global.pageSize;
+      if (typeof config.sdkOptions.global?.requestThrottle === 'number')
+        this._requestThrottle = config.sdkOptions.global.requestThrottle;
+      if (typeof config.sdkOptions.global?.requestTimeout === 'number')
+        this._requestTimeout = config.sdkOptions.global.requestTimeout;
+      this._collectionSpecificOverrides = Object.assign(
+        this._collectionSpecificOverrides,
+        config.sdkOptions.collectionSpecific,
+      );
+    }
 
     this._api = this._initSDK(config);
     this._ready = this._initAuth(config);
@@ -270,9 +302,11 @@ export class DirectusService {
       await this._ready;
       log.info('Fetching all files...');
 
-      const { data = [] } = await this._api.getFiles({
-        limit: -1,
-      });
+      // const { data = [] } = await this._api.getFiles({
+      //   limit: -1,
+      // });
+
+      const data = await this._execPaginatedRequest(this._fileCollectionName, this._api.getFiles);
 
       // The SDK has 'data' typed as IFile[][], but in reality
       // it's returned as IFile[]
@@ -284,5 +318,73 @@ export class DirectusService {
       log.error(`Did you grant READ permissions?`);
       throw e;
     }
+  }
+
+  private async _execPaginatedRequest<R = unknown[]>(
+    collectionName: string,
+    request: (params: QueryParams) => Promise<IAPIResponse<R[], IAPIMetaList>>,
+    config = {},
+  ): Promise<R[]> {
+    const bag: R[] = [];
+    let received = 0;
+    let totalRecords = Number.POSITIVE_INFINITY;
+
+    try {
+      while (received < totalRecords && this._canFetchMore(collectionName, received)) {
+        const {
+          // eslint-disable-next-line @typescript-eslint/camelcase
+          meta: { result_count, total_count },
+          data,
+          error,
+        } = await request(this._buildPaginatedRequestConfig(config, collectionName, received));
+
+        if (error) {
+          throw new Error(error.message);
+        }
+
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        received += result_count;
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        totalRecords = total_count;
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        this._totalRecordsReceived += result_count;
+
+        bag.push(...data);
+      }
+    } catch (e) {
+      log.error(
+        `An error was encountered fetching paginated records for collection: ${collectionName}. Returning results received so far (${bag.length} records).`,
+        e,
+      );
+    }
+
+    return bag;
+  }
+
+  private _buildPaginatedRequestConfig(
+    givenConfig: QueryParams = {},
+    collectionName: string,
+    received: number,
+  ): QueryParams {
+    return {
+      ...givenConfig,
+      offset: received,
+      limit: this._getRecordsRequestLimit(collectionName),
+    };
+  }
+
+  private _getRecordsRequestLimit(collectionName: string): number {
+    return this._collectionSpecificOverrides[collectionName]?.pageSize ?? this._pageSize;
+  }
+
+  private _canFetchMore(collectionName: string, receivedForCollection: number): boolean {
+    if (this._totalRecordsReceived >= this._maxResults) {
+      return false;
+    }
+
+    return (
+      receivedForCollection >=
+      (this._collectionSpecificOverrides[collectionName]?.maxResults ?? Number.POSITIVE_INFINITY)
+    );
   }
 }
