@@ -1,6 +1,6 @@
 import { validator } from './config-validator';
 import { ContentMesh } from './content-mesh';
-import { DirectusService, DirectusServiceConfig, DirectusServiceAdaptor } from './directus-service';
+import { DirectusService, DirectusServiceConfig } from './directus-service';
 import { GatsbyProcessor, GatsbyProcessorConfig } from './gatsby-processor';
 import { log } from './utils';
 
