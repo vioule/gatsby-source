@@ -1,6 +1,6 @@
 {
   "name": "@directus/gatsby-source-directus",
-  "version": "0.2.5",
+  "version": "0.2.6",
   "description": "A Gatsby source plugin to pull content from a Directus CMS backend.",
   "publishConfig": {
     "access": "public"
