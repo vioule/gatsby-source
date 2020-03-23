@@ -242,7 +242,7 @@ export class DirectusService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       })) as { data: any[] };
 
-      return items.filter(record => this._shouldIncludeRecord(record, collection));
+      return items.filter((record) => this._shouldIncludeRecord(record, collection));
     } catch (e) {
       log.error(`Failed to fetch records for collection "${collection}"`);
       log.error(`Did you grant READ permissions?`);

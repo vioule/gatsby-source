@@ -54,7 +54,7 @@ describe('E2E', () => {
     expect(col.isJunction).toBe(false);
 
     expect(col.fields.length).toBe(Object.keys(fields).length);
-    col.fields.forEach(field => expect(fields[field.field]).toEqual(field));
+    col.fields.forEach((field) => expect(fields[field.field]).toEqual(field));
   });
 
   it('Should create the ContentNodes for a simple collection correctly', async () => {
@@ -71,7 +71,7 @@ describe('E2E', () => {
     expect(nodes.length).toBeGreaterThan(0);
     expect(nodes.length).toBe(records.length);
 
-    nodes.forEach(node => {
+    nodes.forEach((node) => {
       expect(node).toBeInstanceOf(ContentNode);
       expect(node.getCollection()).toEqual(col);
       expect(records).toContainEqual(node.contents);
