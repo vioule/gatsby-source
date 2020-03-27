@@ -26,7 +26,7 @@ export class ContentMesh {
   constructor(config: ContentMeshConfig) {
     this._collections = this._buildCollections(config);
 
-    this._buildRelations(config.relations).forEach((relation) => relation.applyRecordUpdates());
+    this._buildRelations(config.relations).forEach(relation => relation.applyRecordUpdates());
   }
 
   /**
@@ -108,7 +108,7 @@ export class ContentMesh {
       [junctionTableName: string]: [IRelation, IRelation?];
     } = {};
 
-    relations.forEach((relation) => {
+    relations.forEach(relation => {
       // Only process M2M, non-internal relations
       if (!this._shouldProcessRelation(relation, 'm2m')) {
         return;

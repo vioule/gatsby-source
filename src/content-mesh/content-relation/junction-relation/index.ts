@@ -30,9 +30,9 @@ export class JunctionContentRelation extends ContentRelation {
     // Explicit cast here because we're filtering out any
     // 'void' values.
     return existing
-      .map((junctionRecord) => this._resolveJunctionNodes(junctionRecord))
+      .map(junctionRecord => this._resolveJunctionNodes(junctionRecord))
       .map(({ src, dest }) => (tableType === 'src' ? dest : src))
-      .filter((node) => !!node) as ContentNode[];
+      .filter(node => !!node) as ContentNode[];
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -25,7 +25,7 @@ export class GatsbyType {
   }
 
   private _initNodes(nodes: ContentNode[] = []): GatsbyNode[] {
-    return nodes.map((node) => {
+    return nodes.map(node => {
       if (this._collection.isFileCollection && this._processor.downloadFiles) {
         return new GatsbyFileNode(node, this._processor);
       }
@@ -38,9 +38,9 @@ export class GatsbyType {
   public async buildNodes(): Promise<any[]> {
     const formatter = this._processor.createNodeFactory(this._name);
 
-    const nodes = await Promise.all(this._nodes.map((node) => node.build()));
+    const nodes = await Promise.all(this._nodes.map(node => node.build()));
 
-    return nodes.map((node) => formatter(node));
+    return nodes.map(node => formatter(node));
   }
 
   public get name(): string {

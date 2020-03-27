@@ -15,7 +15,7 @@ export class GatsbyNode {
 
   public getIds(node: ContentNode | ContentNode[]): string | string[] {
     if (Array.isArray(node)) {
-      return node.map((node) => this._resolveId(node));
+      return node.map(node => this._resolveId(node));
     }
 
     return this._resolveId(node);

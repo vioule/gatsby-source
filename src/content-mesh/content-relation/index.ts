@@ -40,7 +40,7 @@ export abstract class ContentRelation {
   protected _updateTable(table: ContentCollection, tableType: 'src' | 'dest'): void {
     if (!table.acceptsRelations()) return;
 
-    table.getNodes().forEach((node) => {
+    table.getNodes().forEach(node => {
       const related = this._resolveNodeRelation(node, tableType);
       const field = tableType === 'src' ? this._srcField : this._destField;
 
