@@ -1,6 +1,6 @@
 import { validator } from './config-validator';
 import { ContentMesh } from './content-mesh';
-import { DirectusService, DirectusServiceConfig } from './directus-service';
+import { DirectusService, DirectusServiceConfig, DirectusServiceAdaptor } from './directus-service';
 import { GatsbyProcessor, GatsbyProcessorConfig } from './gatsby-processor';
 import { log } from './utils';
 
@@ -25,7 +25,7 @@ export const sourceNodes = async (
   log.info(`URL: ${config.url}`);
   log.info(`Project: ${config.project}`);
 
-  const service = new DirectusService(config);
+  const service: DirectusServiceAdaptor = new DirectusService(config);
 
   try {
     const [collections, relations, files, fileCollection] = await Promise.all([

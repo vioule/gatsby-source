@@ -1,21 +1,23 @@
 import DirectusSDK from '@directus/sdk-js';
 import { IConfigurationOptions } from '@directus/sdk-js/dist/types/Configuration';
-import { IFile } from '@directus/sdk-js/dist/types/schemes/directus/File';
-import {
-  ICollectionDataSet,
-  ICollectionResponse,
-  // ICollectionsResponse,
-} from '@directus/sdk-js/dist/types/schemes/response/Collection';
-import { log } from '../utils';
+import { IAPIMetaList, IAPIResponse } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 import { ILoginCredentials } from '@directus/sdk-js/dist/types/schemes/auth/Login';
-import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
+import { IFile } from '@directus/sdk-js/dist/types/schemes/directus/File';
+import { IRelation } from '@directus/sdk-js/dist/types/schemes/directus/Relation';
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
+import { ICollectionDataSet, ICollectionResponse } from '@directus/sdk-js/dist/types/schemes/response/Collection';
+import { log } from '../utils';
 
-export interface SdkOptions {
+export type EditableQueryParams = Omit<QueryParams, 'meta' | 'fields' | 'offset' | 'single'>;
+export type GlobalQueryParams = EditableQueryParams;
+export type CollectionSpecificQueryParams = EditableQueryParams;
+
+export interface ApiRequestConfig {
   maxResults?: number;
   pageSize?: number;
-  requestThrottle?: number;
-  requestTimeout?: number;
+  throttle?: number;
+  timeout?: number;
+  maxConcurrentRequests?: number;
 }
 
 export interface DirectusServiceConfig {
@@ -34,18 +36,239 @@ export interface DirectusServiceConfig {
   allowCollections?: string[] | void;
   blockCollections?: string[] | void;
 
-  sdkOptions?: {
-    global?: SdkOptions;
-    collectionSpecific?: {
-      [collection_name: string]: SdkOptions;
-    };
-  };
+  apiRequestConfig?: ApiRequestConfig;
+  globalQueryParams?: GlobalQueryParams;
+  collectionQueryParamOverrides?: { [collectionName: string]: CollectionSpecificQueryParams };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customRecordFilter?: (record: any, collection: string) => boolean;
 }
 
-export class DirectusService {
+export interface DirectusServiceAdaptor {
+  batchGetCollections(): Promise<ICollectionDataSet[]>;
+  batchGetRelations(): Promise<IRelation[]>;
+  getAllFiles(): Promise<IFile[]>;
+  getFilesCollection(): Promise<ICollectionDataSet>;
+  batchGetCollectionRecords(collections: ICollectionDataSet[]): Promise<{ [collection: string]: any[] }>;
+}
+
+export interface ApiRequest<T = unknown> {
+  exec(): AsyncGenerator<T>;
+  results(): T | void;
+  onComplete(cb: (results: T) => void): void;
+  onError(cb: (error: Error) => void): void;
+}
+
+export abstract class BaseApiRequest<T = unknown> implements ApiRequest<T> {
+  private _results: T | void = undefined;
+
+  private _completeListeners: Set<(results: T) => void> = new Set();
+  private _errorListeners: Set<(error: Error) => void> = new Set();
+
+  protected abstract _exec(): AsyncGenerator<T>;
+  protected abstract _getNextResults(existingResults: T | void, currentResult: T): T;
+
+  public async *exec(): AsyncGenerator<T> {
+    try {
+      for await (const result of this._exec()) {
+        this._results = this._getNextResults(this._results, result);
+        yield result;
+      }
+      if (typeof this._results !== 'undefined') this._emitComplete(this._results);
+    } catch (e) {
+      this._emitError(e);
+    }
+  }
+
+  public onComplete(cb: (results: T) => void): void {
+    if (typeof cb === 'function') {
+      this._completeListeners.add(cb);
+    }
+  }
+
+  public onError(cb: (error: Error) => void): void {
+    if (typeof cb === 'function') {
+      this._errorListeners.add(cb);
+    }
+  }
+
+  public results(): T | void {
+    return this._results;
+  }
+
+  private _emitError(error: Error): void {
+    this._errorListeners.forEach(cb => cb(error));
+  }
+
+  private _emitComplete(result: T): void {
+    this._completeListeners.forEach(cb => cb(result));
+  }
+}
+
+export class StandardApiRequest<T = unknown> extends BaseApiRequest<T> {
+  protected _request: () => Promise<IAPIResponse<T, IAPIMetaList>>;
+
+  constructor(request: () => Promise<IAPIResponse<T, IAPIMetaList>>) {
+    super();
+    this._request = request;
+  }
+
+  protected async *_exec(): AsyncGenerator<T> {
+    const { error, data } = await this._request();
+
+    if (error) {
+      throw new Error(error.message);
+    }
+
+    yield data;
+  }
+
+  protected _getNextResults(_: T | void, currentResult: T): T {
+    return currentResult;
+  }
+}
+
+export interface PageInfo {
+  received: number;
+  total: number;
+}
+
+export class PaginatedApiRequest<T = unknown> extends BaseApiRequest<T[]> {
+  private _request: (pageInfo: PageInfo) => Promise<IAPIResponse<T[], IAPIMetaList>>;
+  private _beforeNextPage: (pageInfo: PageInfo) => boolean = () => true;
+
+  constructor(
+    request: () => Promise<IAPIResponse<T[], IAPIMetaList>>,
+    beforeNextPage?: (pageInfo: PageInfo) => boolean,
+  ) {
+    super();
+
+    this._request = request;
+
+    if (typeof beforeNextPage === 'function') {
+      this._beforeNextPage = beforeNextPage;
+    }
+  }
+
+  protected async *_exec(): AsyncGenerator<T[]> {
+    let received = 0;
+    let total = Number.POSITIVE_INFINITY;
+
+    while (received < total && this._beforeNextPage({ received, total })) {
+      const {
+        // eslint-disable-next-line @typescript-eslint/camelcase
+        meta: { result_count, total_count },
+        data,
+        error,
+      } = await this._request({ received, total });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      // eslint-disable-next-line @typescript-eslint/camelcase
+      received += result_count;
+      // eslint-disable-next-line @typescript-eslint/camelcase
+      total = total_count;
+
+      yield data;
+    }
+  }
+
+  protected _getNextResults(lastResults: T[] = [], currentResult: T[] = []): T[] {
+    return [...lastResults, ...currentResult];
+  }
+}
+
+export interface RequestQueueConfig {
+  maxConcurrentRequests?: number;
+  throttle?: number;
+  timeout?: number;
+}
+
+export class RequestQueue {
+  private _queue: ApiRequest<any>[] = [];
+  private _active: ApiRequest<any>[] = [];
+  private _failed: ApiRequest<any>[] = [];
+
+  private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
+  private _throttle = 0;
+  private _timeout = 15 * 1000;
+
+  private _flushScheduled = false;
+  private _isFlushing = true;
+
+  constructor(config: RequestQueueConfig) {
+    if (typeof config.maxConcurrentRequests === 'number' && config.maxConcurrentRequests > 0) {
+      this._maxConcurrentRequests = config.maxConcurrentRequests;
+    }
+
+    if (
+      typeof config.throttle === 'number' &&
+      !isNaN(config.throttle) &&
+      Number.isFinite(config.throttle) &&
+      config.throttle >= 0
+    ) {
+      this._throttle = config.throttle;
+    }
+
+    if (
+      typeof config.timeout === 'number' &&
+      !isNaN(config.timeout) &&
+      Number.isFinite(config.timeout) &&
+      config.timeout >= 0
+    ) {
+      this._timeout = config.timeout;
+    }
+  }
+
+  public enqueue(request: ApiRequest<any>): void {
+    this._queue.unshift(request);
+    this._fillActiveQueue();
+    this._scheduleFlush();
+  }
+
+  private _fillActiveQueue(): void {
+    while (this._active.length < this._maxConcurrentRequests && this._queue.length) {
+      this._active.push(this._queue.pop() as ApiRequest<any>);
+    }
+  }
+
+  private _scheduleFlush() {
+    this._flushScheduled = true;
+    this._startFlush();
+  }
+
+  private async _startFlush(): Promise<void> {
+    if (!this._flushScheduled || this._isFlushing) {
+      return;
+    }
+
+    this._flushScheduled = false;
+    this._isFlushing = true;
+
+    // Actually flush the queue, then
+
+    if (this._throttle > 0) {
+      setTimeout(() => {}, this._throttle);
+    } else {
+      this._canFlush = true;
+    }
+  }
+
+  private _handleRequestSuccess(_: any, request: ApiRequest<any>): void {
+    this._active = this._active.filter(r => r !== request);
+    this._fillActiveQueue();
+  }
+
+  private _handleRequestError(error: Error, request: ApiRequest<any>): void {
+    this._active = this._active.filter(r => r !== request);
+    this._failed.push(request);
+    this._fillActiveQueue();
+  }
+}
+
+export class DirectusService implements DirectusServiceAdaptor {
   private static _voidStatusKey = '__NONE__';
 
   private _fileCollectionName = 'directus_files';
@@ -60,18 +283,12 @@ export class DirectusService {
   private _url: string;
   private _project: string;
 
+  private _globalQueryParams: QueryParams = { limit: -1 };
+  private _collectionQueryParams: { [collectionName: string]: CollectionSpecificQueryParams } = {};
+  private _apiRequestConfig: ApiRequestConfig = {};
+
   private _api: DirectusSDK;
   private _ready: Promise<void>;
-
-  private _maxResults: number = Number.POSITIVE_INFINITY;
-  private _pageSize = -1;
-  private _requestThrottle = 0;
-  private _requestTimeout?: number;
-
-  private _collectionSpecificOverrides: {
-    [collectionName: string]: SdkOptions;
-  } = {};
-  private _totalRecordsReceived = 0;
 
   constructor(config: DirectusServiceConfig) {
     log.info('Initializing Directus Service...');
@@ -94,18 +311,16 @@ export class DirectusService {
     this._url = config.url;
     this._project = config.project;
 
-    if (config.sdkOptions) {
-      if (typeof config.sdkOptions.global?.maxResults === 'number')
-        this._maxResults = config.sdkOptions.global.maxResults;
-      if (typeof config.sdkOptions.global?.pageSize === 'number') this._pageSize = config.sdkOptions.global.pageSize;
-      if (typeof config.sdkOptions.global?.requestThrottle === 'number')
-        this._requestThrottle = config.sdkOptions.global.requestThrottle;
-      if (typeof config.sdkOptions.global?.requestTimeout === 'number')
-        this._requestTimeout = config.sdkOptions.global.requestTimeout;
-      this._collectionSpecificOverrides = Object.assign(
-        this._collectionSpecificOverrides,
-        config.sdkOptions.collectionSpecific,
-      );
+    if (config.globalQueryParams) {
+      Object.assign(this._globalQueryParams, config.globalQueryParams);
+    }
+
+    if (config.collectionQueryParamOverrides) {
+      Object.assign(this._collectionQueryParams, config.collectionQueryParamOverrides);
+    }
+
+    if (config.apiRequestConfig) {
+      Object.assign(this._apiRequestConfig, config.apiRequestConfig);
     }
 
     this._api = this._initSDK(config);
@@ -246,7 +461,7 @@ export class DirectusService {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public async batchGetRelations(): Promise<any> {
+  public async batchGetRelations(): Promise<IRelation[]> {
     try {
       await this._ready;
       log.info('Fetching all relations...');
@@ -274,7 +489,7 @@ export class DirectusService {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       })) as { data: any[] };
 
-      return items.filter((record) => this._shouldIncludeRecord(record, collection));
+      return items.filter(record => this._shouldIncludeRecord(record, collection));
     } catch (e) {
       log.error(`Failed to fetch records for collection "${collection}"`);
       log.error(`Did you grant READ permissions?`);
@@ -302,11 +517,9 @@ export class DirectusService {
       await this._ready;
       log.info('Fetching all files...');
 
-      // const { data = [] } = await this._api.getFiles({
-      //   limit: -1,
-      // });
-
-      const data = await this._execPaginatedRequest(this._fileCollectionName, this._api.getFiles);
+      const { data = [] } = await this._api.getFiles({
+        limit: -1,
+      });
 
       // The SDK has 'data' typed as IFile[][], but in reality
       // it's returned as IFile[]
@@ -320,71 +533,71 @@ export class DirectusService {
     }
   }
 
-  private async _execPaginatedRequest<R = unknown[]>(
-    collectionName: string,
-    request: (params: QueryParams) => Promise<IAPIResponse<R[], IAPIMetaList>>,
-    config = {},
-  ): Promise<R[]> {
-    const bag: R[] = [];
-    let received = 0;
-    let totalRecords = Number.POSITIVE_INFINITY;
+  // private async _execPaginatedRequest<R = unknown[]>(
+  //   collectionName: string,
+  //   request: (params: QueryParams) => Promise<IAPIResponse<R[], IAPIMetaList>>,
+  //   config = {},
+  // ): Promise<R[]> {
+  //   const bag: R[] = [];
+  //   let received = 0;
+  //   let totalRecords = Number.POSITIVE_INFINITY;
 
-    try {
-      while (received < totalRecords && this._canFetchMore(collectionName, received)) {
-        const {
-          // eslint-disable-next-line @typescript-eslint/camelcase
-          meta: { result_count, total_count },
-          data,
-          error,
-        } = await request(this._buildPaginatedRequestConfig(config, collectionName, received));
+  //   try {
+  //     while (received < totalRecords && this._canFetchMore(collectionName, received)) {
+  //       const {
+  //         // eslint-disable-next-line @typescript-eslint/camelcase
+  //         meta: { result_count, total_count },
+  //         data,
+  //         error,
+  //       } = await request(this._buildPaginatedRequestConfig(config, collectionName, received));
 
-        if (error) {
-          throw new Error(error.message);
-        }
+  //       if (error) {
+  //         throw new Error(error.message);
+  //       }
 
-        // eslint-disable-next-line @typescript-eslint/camelcase
-        received += result_count;
-        // eslint-disable-next-line @typescript-eslint/camelcase
-        totalRecords = total_count;
-        // eslint-disable-next-line @typescript-eslint/camelcase
-        this._totalRecordsReceived += result_count;
+  //       // eslint-disable-next-line @typescript-eslint/camelcase
+  //       received += result_count;
+  //       // eslint-disable-next-line @typescript-eslint/camelcase
+  //       totalRecords = total_count;
+  //       // eslint-disable-next-line @typescript-eslint/camelcase
+  //       this._totalRecordsReceived += result_count;
 
-        bag.push(...data);
-      }
-    } catch (e) {
-      log.error(
-        `An error was encountered fetching paginated records for collection: ${collectionName}. Returning results received so far (${bag.length} records).`,
-        e,
-      );
-    }
+  //       bag.push(...data);
+  //     }
+  //   } catch (e) {
+  //     log.error(
+  //       `An error was encountered fetching paginated records for collection: ${collectionName}. Returning results received so far (${bag.length} records).`,
+  //       e,
+  //     );
+  //   }
 
-    return bag;
-  }
+  //   return bag;
+  // }
 
-  private _buildPaginatedRequestConfig(
-    givenConfig: QueryParams = {},
-    collectionName: string,
-    received: number,
-  ): QueryParams {
-    return {
-      ...givenConfig,
-      offset: received,
-      limit: this._getRecordsRequestLimit(collectionName),
-    };
-  }
+  // private _buildPaginatedRequestConfig(
+  //   givenConfig: QueryParams = {},
+  //   collectionName: string,
+  //   received: number,
+  // ): QueryParams {
+  //   return {
+  //     ...givenConfig,
+  //     offset: received,
+  //     limit: this._getRecordsRequestLimit(collectionName),
+  //   };
+  // }
 
-  private _getRecordsRequestLimit(collectionName: string): number {
-    return this._collectionSpecificOverrides[collectionName]?.pageSize ?? this._pageSize;
-  }
+  // private _getRecordsRequestLimit(collectionName: string): number {
+  //   return this._collectionSpecificOverrides[collectionName]?.pageSize ?? this._pageSize;
+  // }
 
-  private _canFetchMore(collectionName: string, receivedForCollection: number): boolean {
-    if (this._totalRecordsReceived >= this._maxResults) {
-      return false;
-    }
+  // private _canFetchMore(collectionName: string, receivedForCollection: number): boolean {
+  //   if (this._totalRecordsReceived >= this._maxResults) {
+  //     return false;
+  //   }
 
-    return (
-      receivedForCollection >=
-      (this._collectionSpecificOverrides[collectionName]?.maxResults ?? Number.POSITIVE_INFINITY)
-    );
-  }
+  //   return (
+  //     receivedForCollection >=
+  //     (this._collectionSpecificOverrides[collectionName]?.maxResults ?? Number.POSITIVE_INFINITY)
+  //   );
+  // }
 }
