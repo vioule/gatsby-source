@@ -97,11 +97,11 @@ export abstract class BaseApiRequest<T = unknown> implements ApiRequest<T> {
   }
 
   private _emitError(error: Error): void {
-    this._errorListeners.forEach(cb => cb(error));
+    this._errorListeners.forEach((cb) => cb(error));
   }
 
   private _emitComplete(result: T): void {
-    this._completeListeners.forEach(cb => cb(result));
+    this._completeListeners.forEach((cb) => cb(result));
   }
 }
 
@@ -257,12 +257,12 @@ export class RequestQueue {
   }
 
   private _handleRequestSuccess(_: any, request: ApiRequest<any>): void {
-    this._active = this._active.filter(r => r !== request);
+    this._active = this._active.filter((r) => r !== request);
     this._fillActiveQueue();
   }
 
   private _handleRequestError(error: Error, request: ApiRequest<any>): void {
-    this._active = this._active.filter(r => r !== request);
+    this._active = this._active.filter((r) => r !== request);
     this._failed.push(request);
     this._fillActiveQueue();
   }
@@ -489,7 +489,7 @@ export class DirectusService implements DirectusServiceAdaptor {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
       })) as { data: any[] };
 
-      return items.filter(record => this._shouldIncludeRecord(record, collection));
+      return items.filter((record) => this._shouldIncludeRecord(record, collection));
     } catch (e) {
       log.error(`Failed to fetch records for collection "${collection}"`);
       log.error(`Did you grant READ permissions?`);

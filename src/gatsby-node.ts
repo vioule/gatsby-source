@@ -16,7 +16,7 @@ export const sourceNodes = async (
   const configErrors = validator.validate(config);
 
   if (configErrors.length) {
-    configErrors.forEach(e => log.error(e));
+    configErrors.forEach((e) => log.error(e));
     throw new Error('INVALID_CONFIG');
   }
 
