@@ -2,30 +2,41 @@ import { QueueableRequest } from '../request-queue';
 import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 
 export interface PageInfo {
-  received: number;
-  total: number;
+  currentOffset: number;
+  hasNextPage: boolean;
 }
 
 /**
  * The configuration used to create a new instance of the PaginatedRequest
  * class.
  *
- * @typeparam T Indicates the type of data accumulated by the request and ultimately returned.
  * @typeparam R Indicates the server response shape, including any pagination details.
  */
-export interface PaginatedRequestConfig<T = unknown, R = unknown> {
-  request: (pageInfo: PageInfo) => Promise<R>;
+export interface PaginatedRequestConfig<R = unknown> {
+  /**
+   * A function that accepts the current page info, and returns a Promise that resolves with the next
+   * server response.
+   */
+  sendNextRequest: (pageInfo: PageInfo) => Promise<R>;
+  /**
+   * A function called before each page request with the current pagination info.
+   * A boolean can be returned to indicate if the request should continue.
+   */
   beforeNextPage?: (pageInfo: PageInfo) => boolean;
 }
 
 export abstract class PaginatedRequest<T = unknown, R = unknown> implements QueueableRequest<T> {
   private _results: T | void = undefined;
 
-  private _request: (pageInfo: PageInfo) => Promise<R>;
+  private _sendNextRequest: (pageInfo: PageInfo) => Promise<R>;
   private _beforeNextPage: (pageInfo: PageInfo) => boolean = () => true;
 
-  constructor(config: PaginatedRequestConfig<T, R>) {
-    this._request = config.request;
+  constructor(config: PaginatedRequestConfig<R>) {
+    if (typeof config?.sendNextRequest !== 'function') {
+      throw new TypeError(`Unable to create a PaginatedRequest without a 'config.sendNextRequest' implementation`);
+    }
+
+    this._sendNextRequest = config.sendNextRequest;
 
     if (typeof config.beforeNextPage === 'function') {
       this._beforeNextPage = config.beforeNextPage;
@@ -44,12 +55,12 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
 
   protected async *_responseGenerator(): AsyncGenerator<T> {
     let pageInfo: PageInfo = {
-      received: 0,
-      total: Number.POSITIVE_INFINITY,
+      currentOffset: 0,
+      hasNextPage: true,
     };
 
-    while (pageInfo.received < pageInfo.total && this._beforeNextPage(pageInfo)) {
-      const response = await this._request(pageInfo);
+    while (pageInfo.hasNextPage && this._beforeNextPage(pageInfo)) {
+      const response = await this._sendNextRequest(pageInfo);
       const result = this._resolveResults(response);
       this._results = this._mergeResults(this._results, result);
       pageInfo = this._resolveNextPageInfo(pageInfo, response);
@@ -90,9 +101,9 @@ export class PaginatedDirectusApiRequest<T> extends PaginatedRequest<T, IAPIResp
 
     return {
       // eslint-disable-next-line @typescript-eslint/camelcase
-      received: currentPageInfo.received + result_count,
+      currentOffset: currentPageInfo.currentOffset + result_count,
       // eslint-disable-next-line @typescript-eslint/camelcase
-      total: total_count,
+      hasNextPage: currentPageInfo.currentOffset < total_count,
     };
   }
 }

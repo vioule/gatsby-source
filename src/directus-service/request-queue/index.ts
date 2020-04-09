@@ -11,9 +11,9 @@ export interface RequestQueueConfig {
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export class RequestQueue<T = any> {
-  private _queue: QueueableRequest<T>[] = [];
-  private _active: QueueableRequest<T>[] = [];
-  private _failed: QueueableRequest<T>[] = [];
+  private _queue: AsyncGenerator<T>[] = [];
+  private _active: AsyncGenerator<T>[] = [];
+  private _failed: AsyncGenerator<T>[] = [];
 
   private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
   private _throttle = 0;
@@ -47,8 +47,12 @@ export class RequestQueue<T = any> {
   }
 
   public enqueue(request: QueueableRequest<T>): void {
-    this._queue.unshift(request);
+    this._enqueue(request.exec());
     this._scheduleFlush();
+  }
+
+  private _enqueue(request: AsyncGenerator<T>): void {
+    this._queue.unshift(request);
   }
 
   private _scheduleFlush(): void {
@@ -70,14 +74,13 @@ export class RequestQueue<T = any> {
     this._isFlushing = true;
 
     while (this._active.length < this._maxConcurrentRequests) {
-      const request = this._queue.pop() as QueueableRequest<T>;
+      const request = this._queue.pop() as AsyncGenerator<T>;
       this._active.push(request);
       request
-        .exec()
         .next()
         .then(curs => {
           this._handleRequestSuccess(request);
-          if (!curs.done) this.enqueue(request);
+          if (!curs.done) this._enqueue(request);
         })
         .catch(e => {
           this._handleRequestError(e, request);
@@ -96,11 +99,11 @@ export class RequestQueue<T = any> {
     this._scheduleFlush();
   }
 
-  private _handleRequestSuccess(request: QueueableRequest<T>): void {
+  private _handleRequestSuccess(request: AsyncGenerator<T>): void {
     this._active = this._active.filter(r => r !== request);
   }
 
-  private _handleRequestError(error: Error, request: QueueableRequest<T>): void {
+  private _handleRequestError(error: Error, request: AsyncGenerator<T>): void {
     this._active = this._active.filter(r => r !== request);
     this._failed.push(request);
   }
