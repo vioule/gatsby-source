@@ -1,6 +1,10 @@
 import { QueueableRequest } from '../request-queue';
 import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 
+/**
+ * A small interface representing the state for paginated requests.
+ * Used to execute the correct
+ */
 export interface PageInfo {
   currentOffset: number;
   hasNextPage: boolean;
@@ -43,9 +47,36 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
     }
   }
 
+  /**
+   * Responsible for taking the network response, as returned by
+   * the 'config.sendNextRequest' function, and resolving the
+   * data from that response. Implementors can check responses for errors
+   * and throw if necessary.
+   *
+   * @param response The network response, as returned by 'config.sendNextRequest'.
+   */
   protected abstract _resolveResults(response: R): T;
+
+  /**
+   * Responsible for taking the current set of aggregated results from
+   * prior requests and integrating the new results given by 'newResults'.
+   * 'currentResults' will be void for the first resolved request. This allows
+   * implementors to initialize the appropriate container as needed. The new
+   * complete set of results should be returned.
+   *
+   * @param currentResults The current results, as collected by prior completed requests. Will be 'undefined' if there have been no prior requests.
+   * @param newResults The results as obtained by the current request. These should be added to the 'currentResults' and returned
+   */
   protected abstract _mergeResults(currentResults: T | void, newResults: T): T;
-  protected abstract _resolveNextPageInfo(currentPageInfo: PageInfo, response: R): PageInfo;
+
+  /**
+   * Responsible for taking a network response and the last page info
+   * and resolving the next pag info for usage with the next request.
+   *
+   * @param lastPageInfo The page info used.
+   * @param response The response as returned by the network.
+   */
+  protected abstract _resolveNextPageInfo(lastPageInfo: PageInfo, response: R): PageInfo;
 
   public async *exec(): AsyncGenerator<T> {
     for await (const result of this._responseGenerator()) {
