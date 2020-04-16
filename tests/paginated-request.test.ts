@@ -209,4 +209,25 @@ describe('PaginatedRequest', () => {
       i++;
     }
   });
+
+  it(`Should not throw away results when 'config.sendNextRequest' throws`, async () => {
+    expect.assertions(2);
+    const midpoint = Math.floor(mockResponses.length / 2);
+    const testRequest = new MockPaginatedRequest({
+      sendNextRequest: ((): any => {
+        let i = 0;
+        return jest.fn(
+          (): Promise<MockResponse> =>
+            i < midpoint ? Promise.resolve(mockResponses[i++]) : Promise.reject(new Error('TEST_REJECTION')),
+        );
+      })(),
+    });
+
+    const expectedResults = mockResponses
+      .slice(0, midpoint)
+      .reduce((agg, { data }) => [...agg, ...data], [] as number[]);
+
+    await expect(flushAll(testRequest)).rejects.toThrow();
+    expect(testRequest.results()).toEqual(expectedResults);
+  });
 });
