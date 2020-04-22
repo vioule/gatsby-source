@@ -105,30 +105,34 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   }
 }
 
-export class PaginatedDirectusApiRequest<T> extends PaginatedRequest<T, IAPIResponse<T, IAPIMetaList>> {
-  protected _resolveResults(response: IAPIResponse<T, IAPIMetaList>): T {
+export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
+  T[],
+  IAPIResponse<T | T[], IAPIMetaList>
+> {
+  protected _resolveResults(response: IAPIResponse<T, IAPIMetaList>): T[] {
     const { data, error } = response;
 
     if (error) {
       throw new Error(error.message);
     }
 
-    return data;
+    return Array.isArray(data) ? data : [data];
   }
 
-  protected _mergeResults(currentResults: T | void, nextResult: T): T {
-    if (Array.isArray(nextResult)) {
-      return Array.isArray(currentResults) ? [...currentResults, ...nextResult] : (nextResult as any);
-    } else {
-      return nextResult;
-    }
+  protected _mergeResults(currentResults: T[] = [], nextResult: T[]): T[] {
+    return [...currentResults, ...nextResult];
   }
 
-  protected _resolveNextPageInfo(currentPageInfo: PageInfo, response: IAPIResponse<T, IAPIMetaList>): PageInfo {
+  protected _resolveNextPageInfo(currentPageInfo: PageInfo, response: IAPIResponse<T | T[], IAPIMetaList>): PageInfo {
     const {
       // eslint-disable-next-line @typescript-eslint/camelcase
       meta: { result_count, total_count },
     } = response;
+
+    // eslint-disable-next-line @typescript-eslint/camelcase
+    if (typeof result_count !== 'number' || typeof total_count !== 'number') {
+      throw new Error('Unable to determine result or total count');
+    }
 
     return {
       // eslint-disable-next-line @typescript-eslint/camelcase
