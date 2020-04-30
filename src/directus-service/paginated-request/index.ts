@@ -31,6 +31,7 @@ export interface PaginatedRequestConfig<R = unknown> {
 
 export abstract class PaginatedRequest<T = unknown, R = unknown> implements QueueableRequest<T> {
   private _results: T | void = undefined;
+  private _responseGenerator: AsyncGenerator<T>;
 
   private _sendNextRequest: (pageInfo: PageInfo) => Promise<R>;
   private _beforeNextPage: (pageInfo: PageInfo) => boolean = () => true;
@@ -40,11 +41,30 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
       throw new TypeError(`Unable to create a PaginatedRequest without a 'config.sendNextRequest' implementation`);
     }
 
+    this._responseGenerator = this._createResponseGenerator();
     this._sendNextRequest = config.sendNextRequest;
 
     if (typeof config.beforeNextPage === 'function') {
       this._beforeNextPage = config.beforeNextPage;
     }
+  }
+
+  public async exec(): Promise<IteratorResult<T, any>> {
+    return this._responseGenerator.next();
+    // const test = { async* [Symbol.asyncIterator](): AsyncIterable<any> {
+    // yield "hello";
+    // yield "async";
+    // yield "iteration!";
+    // }
+  }
+
+  public results(): T | void {
+    return this._results;
+  }
+
+  public reset(): void {
+    this._responseGenerator = this._createResponseGenerator();
+    this._results = undefined;
   }
 
   /**
@@ -78,13 +98,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
    */
   protected abstract _resolveNextPageInfo(lastPageInfo: PageInfo, response: R): PageInfo;
 
-  public async *exec(): AsyncGenerator<T> {
-    for await (const result of this._responseGenerator()) {
-      yield result;
-    }
-  }
-
-  protected async *_responseGenerator(): AsyncGenerator<T> {
+  protected async *_createResponseGenerator(): AsyncGenerator<T> {
     let pageInfo: PageInfo = {
       currentOffset: 0,
       hasNextPage: true,
@@ -98,10 +112,6 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
 
       yield result;
     }
-  }
-
-  public results(): T | void {
-    return this._results;
   }
 }
 

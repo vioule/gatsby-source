@@ -1,6 +1,7 @@
 export interface QueueableRequest<T = unknown> {
-  exec(): AsyncGenerator<T>;
+  exec(): Promise<IteratorResult<T, any>>;
   results(): T | void;
+  reset(): void;
 }
 
 export interface RequestQueueConfig {
@@ -9,18 +10,24 @@ export interface RequestQueueConfig {
   timeout?: number;
 }
 
+export interface RequestQueue<T = any> {
+  enqueue(request: QueueableRequest<T>): void;
+  flush(): Promise<T[]>;
+}
+
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
-export class RequestQueue<T = any> {
-  private _queue: AsyncGenerator<T>[] = [];
-  private _active: AsyncGenerator<T>[] = [];
-  private _failed: AsyncGenerator<T>[] = [];
+export class BasicRequestQueue<T = any> implements RequestQueue<T> {
+  private _queue: QueueableRequest<T>[] = [];
+  private _active: Promise<IteratorResult<T, any>>[] = [];
+
+  private _failed: QueueableRequest<T>[] = [];
+  private _completed: QueueableRequest<T>[] = [];
 
   private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
   private _throttle = 0;
   private _timeout = 15 * 1000;
 
-  private _flushScheduled = false;
-  private _isFlushing = true;
+  private _currentFlush: Promise<void> | void = undefined;
 
   constructor(config: RequestQueueConfig) {
     if (typeof config.maxConcurrentRequests === 'number' && config.maxConcurrentRequests > 0) {
@@ -46,65 +53,84 @@ export class RequestQueue<T = any> {
     }
   }
 
+  // TODO: Rewrite this to not auto-start the flush.
   public enqueue(request: QueueableRequest<T>): void {
-    this._enqueue(request.exec());
-    this._scheduleFlush();
-  }
-
-  private _enqueue(request: AsyncGenerator<T>): void {
     this._queue.unshift(request);
   }
 
-  private _scheduleFlush(): void {
-    this._flushScheduled = true;
-    this._startFlush();
+  public async flush(): Promise<T[]> {
+    // Prevent multiple simultaneous flushes
+    if (this._currentFlush) {
+      await this._currentFlush;
+    } else {
+      // Ensure 'currentFlush' is cleared after the flush finishes.
+      await (this._currentFlush = this._startFlush().finally(() => (this._currentFlush = undefined)));
+    }
+
+    return this._getResults();
   }
 
   private async _startFlush(): Promise<void> {
-    if (
-      !this._flushScheduled ||
-      this._isFlushing ||
-      !this._queue.length ||
-      this._active.length >= this._maxConcurrentRequests
-    ) {
-      return;
-    }
+    // Continue to queue requests until request queue is empty
+    while (this._queue.length) {
+      // Fill up the active queue with queued requests.
+      while (this._active.length < this._maxConcurrentRequests && this._queue.length) {
+        this._activateRequest(this._queue.pop()!);
+      }
 
-    this._flushScheduled = false;
-    this._isFlushing = true;
+      // Wait for any request to finish. Again '_active'
+      // is guaranteed to be at least one promise long.
+      await Promise.race(this._active);
 
-    while (this._active.length < this._maxConcurrentRequests) {
-      const request = this._queue.pop() as AsyncGenerator<T>;
-      this._active.push(request);
-      request
-        .next()
-        .then(curs => {
-          this._handleRequestSuccess(request);
-          if (!curs.done) this._enqueue(request);
-        })
-        .catch(e => {
-          this._handleRequestError(e, request);
-        });
-    }
-
-    if (this._throttle > 0) {
-      setTimeout(() => this._onFlushCompleted(), this._throttle);
-    } else {
-      this._onFlushCompleted();
+      // Wait for the throttle if present before
+      // continuing to next request
+      if (this._throttle > 0) {
+        await new Promise(r => setTimeout(r, this._throttle));
+      }
     }
   }
 
-  private _onFlushCompleted(): void {
-    this._isFlushing = false;
-    this._scheduleFlush();
+  private _getResults(): T[] {
+    console.warn('TO IMPLEMENT...');
+    return [];
   }
 
-  private _handleRequestSuccess(request: AsyncGenerator<T>): void {
-    this._active = this._active.filter(r => r !== request);
+  private async _activateRequest(request: QueueableRequest<T>): Promise<void> {
+    const activeRequest = this._wrapTimeout(request.exec(), this._timeout);
+    this._active.push(activeRequest);
+
+    try {
+      const curs = await activeRequest;
+      if (!curs.done) this.enqueue(request);
+      else this._handleRequestComplete(request);
+    } catch (e) {
+      this._handleRequestError(e, request);
+    } finally {
+      this._removeActive(activeRequest);
+    }
   }
 
-  private _handleRequestError(error: Error, request: AsyncGenerator<T>): void {
-    this._active = this._active.filter(r => r !== request);
+  private _wrapTimeout<W>(prom: Promise<W>, timeout = 0): Promise<W> {
+    if (typeof timeout !== 'number' || isNaN(timeout) || !Number.isFinite(timeout) || timeout <= 0) {
+      return prom;
+    }
+
+    return Promise.race([
+      prom,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out')), timeout)) as Promise<never>,
+    ]);
+  }
+
+  private _handleRequestComplete(request: QueueableRequest<T>): void {
+    this._completed.push(request);
+  }
+
+  private _handleRequestError(e: Error, request: QueueableRequest<T>): void {
+    console.error('ERROR: Encountered error during request...', { e, request });
     this._failed.push(request);
+  }
+
+  private _removeActive(request: Promise<IteratorResult<T, any>>): void {
+    this._active = this._active.filter(r => r !== request);
   }
 }

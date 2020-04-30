@@ -33,11 +33,8 @@ describe('PaginatedDirectusApiRequest', () => {
       })(),
     });
     flushAll = async (req: MockRequest): Promise<void> => {
-      const iter = req.exec();
-      let curs = iter.next();
-
-      while (!(await curs).done) {
-        curs = iter.next();
+      while (!(await req.exec()).done) {
+        void 0;
       }
     };
   });

@@ -55,11 +55,8 @@ describe('PaginatedRequest', () => {
       })(),
     });
     flushAll = async (req: MockPaginatedRequest): Promise<void> => {
-      const iter = req.exec();
-      let curs = iter.next();
-
-      while (!(await curs).done) {
-        curs = iter.next();
+      while (!(await req.exec()).done) {
+        void 0;
       }
     };
   });
@@ -107,19 +104,14 @@ describe('PaginatedRequest', () => {
     expect(mockRequest.results()).toBeUndefined();
   });
 
-  it(`Should return a new iterator when exec is called`, () => {
-    const test = mockRequest.exec();
-    expect(typeof test.next).toBe('function');
-    expect(typeof test.return).toBe('function');
-    expect(typeof test.throw).toBe('function');
-  });
-
   it(`Should return iterated responses correctly`, async () => {
     expect.assertions(mockResponses.length + 1);
     let i = 0;
 
-    for await (const result of mockRequest.exec()) {
-      expect(result).toEqual(mockResponses[i++].data);
+    let result: IteratorResult<MockAggregation, any>;
+
+    while (!(result = await mockRequest.exec()).done) {
+      expect(result.value).toEqual(mockResponses[i++].data);
     }
 
     expect(i).toBe(mockResponses.length);
@@ -130,7 +122,7 @@ describe('PaginatedRequest', () => {
     let i = 0;
     const dataSoFar = [];
 
-    for await (const _ of mockRequest.exec()) {
+    while (!(await mockRequest.exec()).done) {
       dataSoFar.push(...mockResponses[i++].data);
       expect(mockRequest.results()).toEqual(dataSoFar);
     }
@@ -229,5 +221,17 @@ describe('PaginatedRequest', () => {
 
     await expect(flushAll(testRequest)).rejects.toThrow();
     expect(testRequest.results()).toEqual(expectedResults);
+  });
+
+  it(`Should use the same iterator for subsequent 'exec' calls`, () => {
+    expect(1).toBe(2);
+  });
+
+  it(`Should continue to behave as a normal iterator when iteration is done`, () => {
+    expect(1).toBe(2);
+  });
+
+  it(`Should reset it's state completely when 'reset' is called`, () => {
+    expect(1).toBe(2);
   });
 });
