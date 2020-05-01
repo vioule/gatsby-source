@@ -1,5 +1,6 @@
 import { QueueableRequest } from '../request-queue';
 import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
+import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
 
 /**
  * A small interface representing the state for paginated requests.
@@ -7,6 +8,7 @@ import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/
  */
 export interface PageInfo {
   currentOffset: number;
+  resultCount: number;
   hasNextPage: boolean;
 }
 
@@ -16,55 +18,68 @@ export interface PageInfo {
  *
  * @typeparam R Indicates the server response shape, including any pagination details.
  */
-export interface PaginatedRequestConfig<R = unknown> {
-  /**
-   * A function that accepts the current page info, and returns a Promise that resolves with the next
-   * server response.
-   */
-  sendNextRequest: (pageInfo: PageInfo) => Promise<R>;
+export interface PaginatedRequestConfig {
   /**
    * A function called before each page request with the current pagination info.
    * A boolean can be returned to indicate if the request should continue.
    */
-  beforeNextPage?: (pageInfo: PageInfo) => boolean;
+  beforeNextPage?: (pageInfo: PageInfo, request: PaginatedRequest) => boolean;
 }
 
 export abstract class PaginatedRequest<T = unknown, R = unknown> implements QueueableRequest<T> {
   private _results: T | void = undefined;
   private _responseGenerator: AsyncGenerator<T>;
 
-  private _sendNextRequest: (pageInfo: PageInfo) => Promise<R>;
-  private _beforeNextPage: (pageInfo: PageInfo) => boolean = () => true;
+  private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
 
-  constructor(config: PaginatedRequestConfig<R>) {
-    if (typeof config?.sendNextRequest !== 'function') {
-      throw new TypeError(`Unable to create a PaginatedRequest without a 'config.sendNextRequest' implementation`);
-    }
+  private _errorListeners: Set<(e: Error) => void> = new Set();
+  private _completeListeners: Set<() => void> = new Set();
 
+  constructor(config: PaginatedRequestConfig) {
     this._responseGenerator = this._createResponseGenerator();
-    this._sendNextRequest = config.sendNextRequest;
 
     if (typeof config.beforeNextPage === 'function') {
       this._beforeNextPage = config.beforeNextPage;
     }
   }
 
-  public async exec(): Promise<IteratorResult<T, any>> {
+  public async exec(): Promise<IteratorResult<T>> {
     return this._responseGenerator.next();
-    // const test = { async* [Symbol.asyncIterator](): AsyncIterable<any> {
-    // yield "hello";
-    // yield "async";
-    // yield "iteration!";
-    // }
   }
 
   public results(): T | void {
     return this._results;
   }
 
+  public finished(): Promise<T> {
+    let onComplete: () => void;
+    let onError: (e: Error) => void;
+
+    return new Promise<T>((res, rej) => {
+      onComplete = (): void => {
+        res(this.results());
+      };
+      onError = (e: Error): void => {
+        rej(e);
+      };
+
+      this._completeListeners.add(onComplete);
+      this._errorListeners.add(onError);
+    }).finally(() => {
+      this._completeListeners.delete(onComplete);
+      this._errorListeners.delete(onError);
+    });
+  }
+
   public reset(): void {
     this._responseGenerator = this._createResponseGenerator();
     this._results = undefined;
+  }
+
+  public async *[Symbol.asyncIterator](): AsyncIterator<T> {
+    for await (const result of this._responseGenerator) {
+      yield result;
+    }
   }
 
   /**
@@ -98,27 +113,65 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
    */
   protected abstract _resolveNextPageInfo(lastPageInfo: PageInfo, response: R): PageInfo;
 
+  /**
+   * Responsible for accepting the current page info, and returning a
+   * Promise that resolves with the next server response.
+   *
+   * @param pageInfo The current page info used for the request.
+   */
+  protected abstract _sendNextRequest(pageInfo: PageInfo): Promise<R>;
+
   protected async *_createResponseGenerator(): AsyncGenerator<T> {
     let pageInfo: PageInfo = {
       currentOffset: 0,
+      resultCount: 0,
       hasNextPage: true,
     };
 
-    while (pageInfo.hasNextPage && this._beforeNextPage(pageInfo)) {
-      const response = await this._sendNextRequest(pageInfo);
-      const result = this._resolveResults(response);
-      this._results = this._mergeResults(this._results, result);
-      pageInfo = this._resolveNextPageInfo(pageInfo, response);
+    while (pageInfo.hasNextPage && this._beforeNextPage(pageInfo, this)) {
+      try {
+        const response = await this._sendNextRequest(pageInfo);
+        const result = this._resolveResults(response);
+        this._results = this._mergeResults(this._results, result);
+        pageInfo = this._resolveNextPageInfo(pageInfo, response);
 
-      yield result;
+        yield result;
+      } catch (e) {
+        this._handleError(e);
+        throw e;
+      }
     }
+
+    this._handleComplete();
   }
+
+  private _handleError(e: Error): void {
+    this._errorListeners.forEach(l => l(e));
+  }
+
+  private _handleComplete(): void {
+    this._completeListeners.forEach(l => l());
+  }
+}
+
+export interface PaginatedDirectusApiRequestConfig<T = unknown> extends PaginatedRequestConfig {
+  makeApiRequest(params: QueryParams): Promise<IAPIResponse<T | T[], IAPIMetaList>>;
+  initialParams?: QueryParams;
 }
 
 export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
   T[],
   IAPIResponse<T | T[], IAPIMetaList>
 > {
+  private _initialParams: QueryParams;
+  private _makeApiRequest: (params: QueryParams) => Promise<IAPIResponse<T | T[], IAPIMetaList>>;
+
+  constructor({ makeApiRequest, initialParams = {}, ...restConfig }: PaginatedDirectusApiRequestConfig<T>) {
+    super(restConfig);
+    this._initialParams = initialParams;
+    this._makeApiRequest = makeApiRequest;
+  }
+
   protected _resolveResults(response: IAPIResponse<T, IAPIMetaList>): T[] {
     const { data, error } = response;
 
@@ -149,6 +202,18 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
       currentOffset: currentPageInfo.currentOffset + result_count,
       // eslint-disable-next-line @typescript-eslint/camelcase
       hasNextPage: currentPageInfo.currentOffset < total_count,
+      // eslint-disable-next-line @typescript-eslint/camelcase
+      resultCount: result_count,
     };
+  }
+
+  protected _sendNextRequest(pageInfo: PageInfo): Promise<IAPIResponse<T | T[], IAPIMetaList>> {
+    const params: QueryParams = {
+      ...this._initialParams,
+      meta: '*',
+      offset: pageInfo.currentOffset,
+    };
+
+    return this._makeApiRequest(params);
   }
 }

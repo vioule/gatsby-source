@@ -2,6 +2,7 @@ export interface QueueableRequest<T = unknown> {
   exec(): Promise<IteratorResult<T, any>>;
   results(): T | void;
   reset(): void;
+  finished(): Promise<T>;
 }
 
 export interface RequestQueueConfig {
@@ -53,9 +54,9 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     }
   }
 
-  // TODO: Rewrite this to not auto-start the flush.
   public enqueue(request: QueueableRequest<T>): void {
     this._queue.unshift(request);
+    this._scheduleFlush();
   }
 
   public async flush(): Promise<T[]> {
@@ -68,6 +69,12 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     }
 
     return this._getResults();
+  }
+
+  private _scheduleFlush(): void {
+    if (!this._currentFlush) {
+      this.flush().catch(e => void 0);
+    }
   }
 
   private async _startFlush(): Promise<void> {
