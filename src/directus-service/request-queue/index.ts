@@ -1,6 +1,6 @@
 export interface QueueableRequest<T = unknown> {
-  exec(): Promise<IteratorResult<T, any>>;
-  results(): T | void;
+  exec(): Promise<IteratorResult<T>>;
+  results(): T;
   reset(): void;
   finished(): Promise<T>;
 }
@@ -19,7 +19,7 @@ export interface RequestQueue<T = any> {
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export class BasicRequestQueue<T = any> implements RequestQueue<T> {
   private _queue: QueueableRequest<T>[] = [];
-  private _active: Promise<IteratorResult<T, any>>[] = [];
+  private _active: Promise<IteratorResult<T>>[] = [];
 
   private _failed: QueueableRequest<T>[] = [];
   private _completed: QueueableRequest<T>[] = [];

@@ -27,7 +27,7 @@ export interface PaginatedRequestConfig {
 }
 
 export abstract class PaginatedRequest<T = unknown, R = unknown> implements QueueableRequest<T> {
-  private _results: T | void = undefined;
+  private _results: T = this._initResults();
   private _responseGenerator: AsyncGenerator<T>;
 
   private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
@@ -47,7 +47,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
     return this._responseGenerator.next();
   }
 
-  public results(): T | void {
+  public results(): T {
     return this._results;
   }
 
@@ -73,7 +73,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
 
   public reset(): void {
     this._responseGenerator = this._createResponseGenerator();
-    this._results = undefined;
+    this._results = this._initResults();
   }
 
   public async *[Symbol.asyncIterator](): AsyncIterator<T> {
@@ -81,6 +81,8 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
       yield result;
     }
   }
+
+  protected abstract _initResults(): T;
 
   /**
    * Responsible for taking the network response, as returned by
@@ -170,6 +172,10 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
     super(restConfig);
     this._initialParams = initialParams;
     this._makeApiRequest = makeApiRequest;
+  }
+
+  protected _initResults(): T[] {
+    return [];
   }
 
   protected _resolveResults(response: IAPIResponse<T, IAPIMetaList>): T[] {
