@@ -5,8 +5,10 @@ import { ILoginCredentials } from '@directus/sdk-js/dist/types/schemes/auth/Logi
 import { IFile } from '@directus/sdk-js/dist/types/schemes/directus/File';
 import { IRelation } from '@directus/sdk-js/dist/types/schemes/directus/Relation';
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
-import { ICollectionDataSet, ICollectionResponse } from '@directus/sdk-js/dist/types/schemes/response/Collection';
+import { ICollectionDataSet } from '@directus/sdk-js/dist/types/schemes/response/Collection';
 import { log } from '../utils';
+import { PageInfo, PaginatedDirectusApiRequest } from './paginated-request';
+import { BasicRequestQueue, RequestQueue } from './request-queue';
 
 export type EditableQueryParams = Omit<QueryParams, 'meta' | 'fields' | 'offset' | 'single'>;
 export type GlobalQueryParams = EditableQueryParams;
@@ -69,10 +71,15 @@ export class DirectusService implements DirectusServiceAdaptor {
 
   private _globalQueryParams: QueryParams = { limit: -1 };
   private _collectionQueryParams: { [collectionName: string]: CollectionSpecificQueryParams } = {};
-  private _apiRequestConfig: ApiRequestConfig = {};
+  private _apiRequestConfig: ApiRequestConfig = {
+    maxResults: Number.POSITIVE_INFINITY,
+  };
 
   private _api: DirectusSDK;
   private _ready: Promise<void>;
+
+  private _requestQueue: RequestQueue;
+  private _totalResults = 0;
 
   constructor(config: DirectusServiceConfig) {
     log.info('Initializing Directus Service...');
@@ -109,6 +116,7 @@ export class DirectusService implements DirectusServiceAdaptor {
 
     this._api = this._initSDK(config);
     this._ready = this._initAuth(config);
+    this._requestQueue = new BasicRequestQueue({ ...this._apiRequestConfig });
   }
 
   private _initSDK({ url, project, auth = {} }: DirectusServiceConfig): DirectusSDK {
@@ -181,18 +189,24 @@ export class DirectusService implements DirectusServiceAdaptor {
     return this._targetStatuses.includes(record.status);
   }
 
-  public async getCollection(collectionId: string): Promise<ICollectionResponse> {
-    try {
-      await this._ready;
-      log.info(`Fetching collection info for "${collectionId}"`);
-      const response = await this._api.getCollection(collectionId);
+  // public async getCollection(collectionId: string): Promise<ICollectionResponse> {
+  //   try {
+  //     await this._ready;
+  //     log.info(`Fetching collection info for "${collectionId}"`);
 
-      return response;
-    } catch (e) {
-      log.error(`Failed to fetch collection ${collectionId}`);
-      throw e;
-    }
-  }
+  //     const request = this._makePaginatedRequest(params => this._api.getCollection(collectionId, params));
+
+  //     this._requestQueue.enqueue(request);
+
+  //     const [result] = await request.finished();
+
+  //     return result;
+
+  //   } catch (e) {
+  //     log.error(`Failed to fetch collection ${collectionId}`);
+  //     throw e;
+  //   }
+  // }
 
   public async getFilesCollection(): Promise<ICollectionDataSet> {
     try {
@@ -201,14 +215,21 @@ export class DirectusService implements DirectusServiceAdaptor {
 
       // For some reason, api.getCollection(this._fileCollectionName) is not working
       // at time of authorship.
+      const request = this._makePaginatedRequest(
+        params =>
+          this._api.getCollections({
+            ...this._getCollectionParams('directus_collections'),
+            ...params,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }) as any,
+      );
+
+      this._requestQueue.enqueue(request);
 
       // Explicit 'any' cast because ICollectionsResponse doesn't match the actual response shape (DirectusSDK bug)
-      const { data: collections = [] } = (await this._api.getCollections({
-        limit: -1,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      })) as any;
+      const results = await request.finished();
 
-      const [fileCollection] = (collections as ICollectionDataSet[]).filter(
+      const fileCollection = (results as ICollectionDataSet[]).find(
         ({ collection }) => collection === this._fileCollectionName,
       );
 
@@ -229,13 +250,21 @@ export class DirectusService implements DirectusServiceAdaptor {
       log.info('Fetching all collections...');
 
       // Explicit 'any' cast because ICollectionsResponse doesn't match the actual response shape (DirectusSDK bug)
-      const { data: collections = [] } = (await this._api.getCollections({
-        limit: -1,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      })) as any;
+      const request = this._makePaginatedRequest(
+        params =>
+          this._api.getCollections({
+            ...this._getCollectionParams('directus_collections'),
+            ...params,
+            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          }) as any,
+      );
+
+      this._requestQueue.enqueue(request);
+
+      const results = await request.finished();
 
       // Currently we don't consider non-managed Directus tables.
-      return (collections as ICollectionDataSet[]).filter(({ collection, managed }) =>
+      return (results as ICollectionDataSet[]).filter(({ collection, managed }) =>
         this._shouldIncludeCollection(collection, managed),
       );
     } catch (e) {
@@ -250,11 +279,16 @@ export class DirectusService implements DirectusServiceAdaptor {
       await this._ready;
       log.info('Fetching all relations...');
 
-      const { data: relations = [] } = await this._api.getRelations({
-        limit: -1,
-      });
+      const request = this._makePaginatedRequest(params =>
+        this._api.getRelations({
+          ...this._getCollectionParams('directus_relations'),
+          ...params,
+        }),
+      );
 
-      return relations;
+      this._requestQueue.enqueue(request);
+
+      return await request.finished();
     } catch (e) {
       log.error('Failed to fetch relations');
       throw e;
@@ -262,18 +296,24 @@ export class DirectusService implements DirectusServiceAdaptor {
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  public async getCollectionRecords(collection: string): Promise<T[]> {
+  public async getCollectionRecords(collection: string): Promise<any[]> {
     try {
       await this._ready;
       log.info(`Fetching records for ${collection}...`);
 
-      const { data: items = [] } = (await this._api.getItems(collection, {
-        fields: '*.*',
-        limit: -1,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      })) as { data: any[] };
+      const request = this._makePaginatedRequest(params =>
+        this._api.getItems(collection, {
+          ...this._getCollectionParams(collection),
+          fields: '*.*',
+          ...params,
+        }),
+      );
 
-      return items.filter((record) => this._shouldIncludeRecord(record, collection));
+      this._requestQueue.enqueue(request);
+
+      const results = await request.finished();
+
+      return results.filter(record => this._shouldIncludeRecord(record, collection));
     } catch (e) {
       log.error(`Failed to fetch records for collection "${collection}"`);
       log.error(`Did you grant READ permissions?`);
@@ -301,19 +341,53 @@ export class DirectusService implements DirectusServiceAdaptor {
       await this._ready;
       log.info('Fetching all files...');
 
-      const { data = [] } = await this._api.getFiles({
-        limit: -1,
-      });
+      const request = this._makePaginatedRequest(params =>
+        this._api.getFiles({
+          ...this._getCollectionParams('directus_files'),
+          ...params,
+        }),
+      );
+
+      this._requestQueue.enqueue(request);
 
       // The SDK has 'data' typed as IFile[][], but in reality
       // it's returned as IFile[]
       //
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      return data as any;
+      return (await request.finished()) as any;
     } catch (e) {
       log.error('Failed to fetch files.');
       log.error(`Did you grant READ permissions?`);
       throw e;
     }
+  }
+
+  private _makePaginatedRequest<T extends IAPIResponse<{}>>(
+    fn: (params: QueryParams) => Promise<T>,
+  ): PaginatedDirectusApiRequest<T['data'] extends Array<infer J> ? J : T['data']> {
+    return new PaginatedDirectusApiRequest<T>({
+      makeApiRequest: (params: QueryParams): Promise<IAPIResponse<T, IAPIMetaList>> => fn(params) as any,
+      beforeNextPage: this._beforeNextPaginatedRequest,
+    }) as any;
+  }
+
+  private _beforeNextPaginatedRequest({ resultCount }: PageInfo): boolean {
+    this._totalResults += resultCount;
+
+    if (typeof this._apiRequestConfig.maxResults === 'number') {
+      return this._totalResults < this._apiRequestConfig.maxResults;
+    }
+
+    return true;
+  }
+
+  private _getCollectionParams(collectionName: string): QueryParams {
+    if (Object.prototype.hasOwnProperty.call(this._collectionQueryParams, collectionName)) {
+      return {
+        ...this._globalQueryParams,
+        ...this._collectionQueryParams[collectionName],
+      };
+    }
+    return this._globalQueryParams;
   }
 }
