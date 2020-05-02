@@ -11,12 +11,11 @@ import { PageInfo, PaginatedDirectusApiRequest } from './paginated-request';
 import { BasicRequestQueue, RequestQueue } from './request-queue';
 
 export type EditableQueryParams = Omit<QueryParams, 'meta' | 'fields' | 'offset' | 'single'>;
-export type GlobalQueryParams = EditableQueryParams;
-export type CollectionSpecificQueryParams = EditableQueryParams;
+export type CustomQueryParams = { chunkSize?: number };
+export type GlobalQueryParams = EditableQueryParams & CustomQueryParams;
+export type CollectionSpecificQueryParams = EditableQueryParams & CustomQueryParams;
 
 export interface ApiRequestConfig {
-  maxResults?: number;
-  pageSize?: number;
   throttle?: number;
   timeout?: number;
   maxConcurrentRequests?: number;
@@ -69,11 +68,9 @@ export class DirectusService implements DirectusServiceAdaptor {
   private _url: string;
   private _project: string;
 
-  private _globalQueryParams: QueryParams = { limit: -1 };
+  private _globalQueryParams: GlobalQueryParams = { limit: -1 };
   private _collectionQueryParams: { [collectionName: string]: CollectionSpecificQueryParams } = {};
-  private _apiRequestConfig: ApiRequestConfig = {
-    maxResults: Number.POSITIVE_INFINITY,
-  };
+  private _apiRequestConfig: ApiRequestConfig = {};
 
   private _api: DirectusSDK;
   private _ready: Promise<void>;
@@ -189,33 +186,17 @@ export class DirectusService implements DirectusServiceAdaptor {
     return this._targetStatuses.includes(record.status);
   }
 
-  // public async getCollection(collectionId: string): Promise<ICollectionResponse> {
-  //   try {
-  //     await this._ready;
-  //     log.info(`Fetching collection info for "${collectionId}"`);
-
-  //     const request = this._makePaginatedRequest(params => this._api.getCollection(collectionId, params));
-
-  //     this._requestQueue.enqueue(request);
-
-  //     const [result] = await request.finished();
-
-  //     return result;
-
-  //   } catch (e) {
-  //     log.error(`Failed to fetch collection ${collectionId}`);
-  //     throw e;
-  //   }
-  // }
-
   public async getFilesCollection(): Promise<ICollectionDataSet> {
     try {
       await this._ready;
-      log.info(`Fetching files collection using name "${this._fileCollectionName}"`);
+      // log.info(`Fetching files collection using name "${this._fileCollectionName}"`);
 
       // For some reason, api.getCollection(this._fileCollectionName) is not working
       // at time of authorship.
       const request = this._makePaginatedRequest(
+        `Files Collection - ${this._fileCollectionName}`,
+        this._getCollectionChunkSize('directus_collections'),
+        this._getCollectionLimit('directus_collections'),
         params =>
           this._api.getCollections({
             ...this._getCollectionParams('directus_collections'),
@@ -240,6 +221,7 @@ export class DirectusService implements DirectusServiceAdaptor {
       return fileCollection;
     } catch (e) {
       log.error('Failed to fetch files collection');
+      log.error(`Details:`, e);
       throw e;
     }
   }
@@ -247,10 +229,13 @@ export class DirectusService implements DirectusServiceAdaptor {
   public async batchGetCollections(): Promise<ICollectionDataSet[]> {
     try {
       await this._ready;
-      log.info('Fetching all collections...');
+      // log.info('Fetching all collections...');
 
       // Explicit 'any' cast because ICollectionsResponse doesn't match the actual response shape (DirectusSDK bug)
       const request = this._makePaginatedRequest(
+        'All Collections',
+        this._getCollectionChunkSize('directus_collections'),
+        this._getCollectionLimit('directus_collections'),
         params =>
           this._api.getCollections({
             ...this._getCollectionParams('directus_collections'),
@@ -269,6 +254,7 @@ export class DirectusService implements DirectusServiceAdaptor {
       );
     } catch (e) {
       log.error('Failed to fetch collections');
+      log.error(`Details:`, e);
       throw e;
     }
   }
@@ -277,13 +263,17 @@ export class DirectusService implements DirectusServiceAdaptor {
   public async batchGetRelations(): Promise<IRelation[]> {
     try {
       await this._ready;
-      log.info('Fetching all relations...');
+      // log.info('Fetching all relations...');
 
-      const request = this._makePaginatedRequest(params =>
-        this._api.getRelations({
-          ...this._getCollectionParams('directus_relations'),
-          ...params,
-        }),
+      const request = this._makePaginatedRequest(
+        'All Relations',
+        this._getCollectionChunkSize('directus_relations'),
+        this._getCollectionLimit('directus_relations'),
+        params =>
+          this._api.getRelations({
+            ...this._getCollectionParams('directus_relations'),
+            ...params,
+          }),
       );
 
       this._requestQueue.enqueue(request);
@@ -291,6 +281,7 @@ export class DirectusService implements DirectusServiceAdaptor {
       return await request.finished();
     } catch (e) {
       log.error('Failed to fetch relations');
+      log.error(`Details:`, e);
       throw e;
     }
   }
@@ -299,14 +290,18 @@ export class DirectusService implements DirectusServiceAdaptor {
   public async getCollectionRecords(collection: string): Promise<any[]> {
     try {
       await this._ready;
-      log.info(`Fetching records for ${collection}...`);
+      // log.info(`Fetching records for ${collection}...`);
 
-      const request = this._makePaginatedRequest(params =>
-        this._api.getItems(collection, {
-          ...this._getCollectionParams(collection),
-          fields: '*.*',
-          ...params,
-        }),
+      const request = this._makePaginatedRequest(
+        `Collection Records - ${collection}`,
+        this._getCollectionChunkSize(collection),
+        this._getCollectionLimit(collection),
+        params =>
+          this._api.getItems(collection, {
+            ...this._getCollectionParams(collection),
+            fields: '*.*',
+            ...params,
+          }),
       );
 
       this._requestQueue.enqueue(request);
@@ -317,13 +312,14 @@ export class DirectusService implements DirectusServiceAdaptor {
     } catch (e) {
       log.error(`Failed to fetch records for collection "${collection}"`);
       log.error(`Did you grant READ permissions?`);
+      log.error(`Details:`, e);
       throw e;
     }
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public batchGetCollectionRecords(collections: ICollectionDataSet[]): Promise<{ [collection: string]: any[] }> {
-    log.info('Fetching all records...');
+    // log.info('Fetching all records...');
 
     return Promise.all(collections.map(({ collection }) => this.getCollectionRecords(collection))).then(
       (recordSets = []) => {
@@ -339,13 +335,17 @@ export class DirectusService implements DirectusServiceAdaptor {
   public async getAllFiles(): Promise<IFile[]> {
     try {
       await this._ready;
-      log.info('Fetching all files...');
+      // log.info('Fetching all files...');
 
-      const request = this._makePaginatedRequest(params =>
-        this._api.getFiles({
-          ...this._getCollectionParams('directus_files'),
-          ...params,
-        }),
+      const request = this._makePaginatedRequest(
+        `All Files`,
+        this._getCollectionChunkSize('directus_files'),
+        this._getCollectionLimit('directus_files'),
+        params =>
+          this._api.getFiles({
+            ...this._getCollectionParams('directus_files'),
+            ...params,
+          }),
       );
 
       this._requestQueue.enqueue(request);
@@ -358,36 +358,56 @@ export class DirectusService implements DirectusServiceAdaptor {
     } catch (e) {
       log.error('Failed to fetch files.');
       log.error(`Did you grant READ permissions?`);
+      log.error(`Details:`, e);
       throw e;
     }
   }
 
   private _makePaginatedRequest<T extends IAPIResponse<{}>>(
+    id: string,
+    chunkSize: number,
+    limit: number,
     fn: (params: QueryParams) => Promise<T>,
   ): PaginatedDirectusApiRequest<T['data'] extends Array<infer J> ? J : T['data']> {
     return new PaginatedDirectusApiRequest<T>({
+      id,
+      chunkSize,
+      limit,
+      timeout: this._apiRequestConfig.timeout,
       makeApiRequest: (params: QueryParams): Promise<IAPIResponse<T, IAPIMetaList>> => fn(params) as any,
-      beforeNextPage: this._beforeNextPaginatedRequest,
+      beforeNextPage: this._beforeNextPaginatedRequest as any,
     }) as any;
   }
 
-  private _beforeNextPaginatedRequest({ resultCount }: PageInfo): boolean {
+  private _beforeNextPaginatedRequest = (
+    { resultCount, totalPageCount, currentPage }: PageInfo,
+    req: PaginatedDirectusApiRequest<any>,
+  ): boolean => {
     this._totalResults += resultCount;
 
-    if (typeof this._apiRequestConfig.maxResults === 'number') {
-      return this._totalResults < this._apiRequestConfig.maxResults;
-    }
+    log.info(
+      `Fetching ${req.id} ${
+        totalPageCount > 0
+          ? `(page ${currentPage + 1} of ${totalPageCount}) ${req.limit >= 0 ? `(limit: ${req.limit})` : ''}`
+          : ''
+      }`,
+    );
 
     return true;
-  }
+  };
 
   private _getCollectionParams(collectionName: string): QueryParams {
-    if (Object.prototype.hasOwnProperty.call(this._collectionQueryParams, collectionName)) {
-      return {
-        ...this._globalQueryParams,
-        ...this._collectionQueryParams[collectionName],
-      };
-    }
-    return this._globalQueryParams;
+    return {
+      ...this._globalQueryParams,
+      ...(this._collectionQueryParams[collectionName] ?? {}),
+    };
+  }
+
+  private _getCollectionChunkSize(collectionName: string): number {
+    return this._collectionQueryParams[collectionName]?.chunkSize ?? this._globalQueryParams.chunkSize ?? 0;
+  }
+
+  private _getCollectionLimit(collectionName: string): number {
+    return this._collectionQueryParams[collectionName]?.limit ?? this._globalQueryParams.limit ?? -1;
   }
 }

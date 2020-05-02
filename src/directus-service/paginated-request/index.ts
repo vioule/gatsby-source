@@ -1,6 +1,7 @@
 import { QueueableRequest } from '../request-queue';
 import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
+import { log } from '../../utils';
 
 /**
  * A small interface representing the state for paginated requests.
@@ -9,6 +10,8 @@ import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
 export interface PageInfo {
   currentOffset: number;
   resultCount: number;
+  currentPage: number;
+  totalPageCount: number;
   hasNextPage: boolean;
 }
 
@@ -20,6 +23,10 @@ export interface PageInfo {
  */
 export interface PaginatedRequestConfig {
   /**
+   * Specifies the amount of time (in ms) an individual request can be active before timing out.
+   */
+  timeout?: number;
+  /**
    * A function called before each page request with the current pagination info.
    * A boolean can be returned to indicate if the request should continue.
    */
@@ -30,6 +37,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   private _results: T = this._initResults();
   private _responseGenerator: AsyncGenerator<T>;
 
+  private _timeout = 15 * 1000;
   private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
 
   private _errorListeners: Set<(e: Error) => void> = new Set();
@@ -40,6 +48,15 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
 
     if (typeof config.beforeNextPage === 'function') {
       this._beforeNextPage = config.beforeNextPage;
+    }
+
+    if (
+      typeof config.timeout === 'number' &&
+      !isNaN(config.timeout) &&
+      Number.isFinite(config.timeout) &&
+      config.timeout >= 0
+    ) {
+      this._timeout = config.timeout;
     }
   }
 
@@ -127,12 +144,14 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
     let pageInfo: PageInfo = {
       currentOffset: 0,
       resultCount: 0,
+      currentPage: 0,
+      totalPageCount: 0,
       hasNextPage: true,
     };
 
     while (pageInfo.hasNextPage && this._beforeNextPage(pageInfo, this)) {
       try {
-        const response = await this._sendNextRequest(pageInfo);
+        const response = await this._wrapTimeout(this._sendNextRequest(pageInfo), this._timeout);
         const result = this._resolveResults(response);
         this._results = this._mergeResults(this._results, result);
         pageInfo = this._resolveNextPageInfo(pageInfo, response);
@@ -147,6 +166,17 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
     this._handleComplete();
   }
 
+  private _wrapTimeout<W>(prom: Promise<W>, timeout = 0): Promise<W> {
+    if (typeof timeout !== 'number' || isNaN(timeout) || !Number.isFinite(timeout) || timeout <= 0) {
+      return prom;
+    }
+
+    return Promise.race([
+      prom,
+      new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out')), timeout)) as Promise<never>,
+    ]);
+  }
+
   private _handleError(e: Error): void {
     this._errorListeners.forEach(l => l(e));
   }
@@ -157,6 +187,9 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
 }
 
 export interface PaginatedDirectusApiRequestConfig<T = unknown> extends PaginatedRequestConfig {
+  id: string;
+  chunkSize: number;
+  limit: number;
   makeApiRequest(params: QueryParams): Promise<IAPIResponse<T | T[], IAPIMetaList>>;
   initialParams?: QueryParams;
 }
@@ -165,11 +198,31 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
   T[],
   IAPIResponse<T | T[], IAPIMetaList>
 > {
+  public readonly id: string;
+
+  public readonly chunkSize: number = 0;
+  public readonly limit: number = -1;
+
   private _initialParams: QueryParams;
   private _makeApiRequest: (params: QueryParams) => Promise<IAPIResponse<T | T[], IAPIMetaList>>;
 
-  constructor({ makeApiRequest, initialParams = {}, ...restConfig }: PaginatedDirectusApiRequestConfig<T>) {
+  constructor({
+    id,
+    chunkSize,
+    limit,
+    makeApiRequest,
+    initialParams = {},
+    ...restConfig
+  }: PaginatedDirectusApiRequestConfig<T>) {
     super(restConfig);
+    this.id = id;
+    if (typeof chunkSize === 'number' && chunkSize > 0 && Number.isFinite(chunkSize)) {
+      this.chunkSize = chunkSize;
+    }
+    if (typeof limit === 'number' && limit >= -1 && Number.isFinite(limit)) {
+      this.limit = limit;
+    }
+    this.chunkSize = chunkSize;
     this._initialParams = initialParams;
     this._makeApiRequest = makeApiRequest;
   }
@@ -195,30 +248,64 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
   protected _resolveNextPageInfo(currentPageInfo: PageInfo, response: IAPIResponse<T | T[], IAPIMetaList>): PageInfo {
     const {
       // eslint-disable-next-line @typescript-eslint/camelcase
-      meta: { result_count, total_count },
-    } = response;
+      meta: { result_count, page, page_count },
+    } = response as any;
 
     // eslint-disable-next-line @typescript-eslint/camelcase
-    if (typeof result_count !== 'number' || typeof total_count !== 'number') {
+    if (typeof result_count !== 'number' || typeof page !== 'number' || typeof page_count !== 'number') {
       throw new Error('Unable to determine result or total count');
     }
 
+    // console.log('resolving next page ifo', currentPageInfo, this.id, this._chunkSize);
+
+    const nextOffset =
+      currentPageInfo.currentOffset +
+      Math.min(result_count, this.limit >= 0 ? this.limit - this.results.length : Number.POSITIVE_INFINITY);
+
     return {
       // eslint-disable-next-line @typescript-eslint/camelcase
-      currentOffset: currentPageInfo.currentOffset + result_count,
+      currentOffset: nextOffset,
       // eslint-disable-next-line @typescript-eslint/camelcase
-      hasNextPage: currentPageInfo.currentOffset < total_count,
+      hasNextPage: this._resolveHasNextPage(nextOffset, response.meta),
       // eslint-disable-next-line @typescript-eslint/camelcase
       resultCount: result_count,
+      currentPage: page,
+      totalPageCount: this._resolveTotalPageCount(response.meta),
     };
+  }
+
+  private _resolveHasNextPage(nextOffset: number, meta: any): boolean {
+    if ((this.limit >= 0 && nextOffset >= this.limit) || meta.page >= meta.page_count) {
+      return false;
+    }
+
+    return this.chunkSize > 0;
+  }
+
+  private _resolveTotalPageCount(meta: any): number {
+    if (this.limit >= 0 && this.chunkSize > 0) {
+      return Math.ceil(this.limit / this.chunkSize);
+    }
+
+    return meta.page_count;
   }
 
   protected _sendNextRequest(pageInfo: PageInfo): Promise<IAPIResponse<T | T[], IAPIMetaList>> {
     const params: QueryParams = {
       ...this._initialParams,
       meta: '*',
-      offset: pageInfo.currentOffset,
     };
+
+    // Only add the 'offset' when needed. Avoids a bug in the Directus API.
+    if (pageInfo.currentOffset > 0) {
+      params.offset = pageInfo.currentOffset;
+    }
+
+    if (this.limit >= 0 && this.chunkSize > 0) {
+      params.limit = Math.min(this.limit, this.chunkSize);
+    } else {
+      params.limit = this.chunkSize > 0 ? this.chunkSize : this.limit;
+    }
 
     return this._makeApiRequest(params);
   }

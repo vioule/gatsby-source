@@ -8,12 +8,12 @@ export interface QueueableRequest<T = unknown> {
 export interface RequestQueueConfig {
   maxConcurrentRequests?: number;
   throttle?: number;
-  timeout?: number;
 }
 
 export interface RequestQueue<T = any> {
   enqueue(request: QueueableRequest<T>): void;
-  flush(): Promise<T[]>;
+  flush(): Promise<void>;
+  results(): T[];
 }
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -26,7 +26,6 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
 
   private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
   private _throttle = 0;
-  private _timeout = 15 * 1000;
 
   private _currentFlush: Promise<void> | void = undefined;
 
@@ -43,15 +42,6 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     ) {
       this._throttle = config.throttle;
     }
-
-    if (
-      typeof config.timeout === 'number' &&
-      !isNaN(config.timeout) &&
-      Number.isFinite(config.timeout) &&
-      config.timeout >= 0
-    ) {
-      this._timeout = config.timeout;
-    }
   }
 
   public enqueue(request: QueueableRequest<T>): void {
@@ -59,7 +49,7 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     this._scheduleFlush();
   }
 
-  public async flush(): Promise<T[]> {
+  public async flush(): Promise<void> {
     // Prevent multiple simultaneous flushes
     if (this._currentFlush) {
       await this._currentFlush;
@@ -67,13 +57,15 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
       // Ensure 'currentFlush' is cleared after the flush finishes.
       await (this._currentFlush = this._startFlush().finally(() => (this._currentFlush = undefined)));
     }
+  }
 
-    return this._getResults();
+  public results(): T[] {
+    return this._completed.map(r => r.results());
   }
 
   private _scheduleFlush(): void {
     if (!this._currentFlush) {
-      this.flush().catch(e => void 0);
+      this.flush().catch(() => void 0);
     }
   }
 
@@ -97,13 +89,8 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     }
   }
 
-  private _getResults(): T[] {
-    console.warn('TO IMPLEMENT...');
-    return [];
-  }
-
   private async _activateRequest(request: QueueableRequest<T>): Promise<void> {
-    const activeRequest = this._wrapTimeout(request.exec(), this._timeout);
+    const activeRequest = request.exec();
     this._active.push(activeRequest);
 
     try {
@@ -117,23 +104,11 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     }
   }
 
-  private _wrapTimeout<W>(prom: Promise<W>, timeout = 0): Promise<W> {
-    if (typeof timeout !== 'number' || isNaN(timeout) || !Number.isFinite(timeout) || timeout <= 0) {
-      return prom;
-    }
-
-    return Promise.race([
-      prom,
-      new Promise((_, rej) => setTimeout(() => rej(new Error('Request timed out')), timeout)) as Promise<never>,
-    ]);
-  }
-
   private _handleRequestComplete(request: QueueableRequest<T>): void {
     this._completed.push(request);
   }
 
   private _handleRequestError(e: Error, request: QueueableRequest<T>): void {
-    console.error('ERROR: Encountered error during request...', { e, request });
     this._failed.push(request);
   }
 

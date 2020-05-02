@@ -16,7 +16,7 @@ export const sourceNodes = async (
   const configErrors = validator.validate(config);
 
   if (configErrors.length) {
-    configErrors.forEach((e) => log.error(e));
+    configErrors.forEach(e => log.error(e));
     throw new Error('INVALID_CONFIG');
   }
 
@@ -28,14 +28,13 @@ export const sourceNodes = async (
   const service: DirectusServiceAdaptor = new DirectusService(config);
 
   try {
-    const [collections, relations, files, fileCollection] = await Promise.all([
+    const [collections, relations, fileCollection] = await Promise.all([
       service.batchGetCollections(),
       service.batchGetRelations(),
-      service.getAllFiles(),
       service.getFilesCollection(),
     ]);
 
-    const records = await service.batchGetCollectionRecords(collections);
+    const [records, files] = await Promise.all([service.batchGetCollectionRecords(collections), service.getAllFiles()]);
 
     const contentMesh = new ContentMesh({
       collections: [...collections, fileCollection],
