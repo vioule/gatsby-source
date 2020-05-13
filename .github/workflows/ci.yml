@@ -69,7 +69,7 @@ jobs:
       - run: yarn install --frozen-lockfile
       - run: yarn build
       - run: yarn test
-      - run: sleep 15 # Wait 15 seconds for the Directus API to be ready
+      - run: sleep 30 # Wait 30 seconds for the Directus API to be ready
       - run: yarn e2e
 
   publish:
