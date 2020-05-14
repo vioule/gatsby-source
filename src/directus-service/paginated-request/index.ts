@@ -1,7 +1,6 @@
-import { QueueableRequest } from '../request-queue';
-import { IAPIResponse, IAPIMetaList } from '@directus/sdk-js/dist/types/schemes/APIResponse';
+import { IAPIMetaList, IAPIResponse } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
-import { log } from '../../utils';
+import { QueueableRequest } from '../request-queue';
 
 /**
  * A small interface representing the state for paginated requests.
@@ -33,17 +32,21 @@ export interface PaginatedRequestConfig {
   beforeNextPage?: (pageInfo: PageInfo, request: PaginatedRequest) => boolean;
 }
 
+type PaginatedRequestState = 'complete::error' | 'complete::success' | 'queued' | 'started';
+
 export abstract class PaginatedRequest<T = unknown, R = unknown> implements QueueableRequest<T> {
   private _results: T = this._initResults();
+  private _receivedError: Error | void = undefined;
   private _responseGenerator: AsyncGenerator<T>;
 
   private _timeout = 15 * 1000;
   private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
 
+  private _state: PaginatedRequestState = 'queued';
   private _errorListeners: Set<(e: Error) => void> = new Set();
   private _completeListeners: Set<() => void> = new Set();
 
-  constructor(config: PaginatedRequestConfig) {
+  constructor(config: PaginatedRequestConfig = {}) {
     this._responseGenerator = this._createResponseGenerator();
 
     if (typeof config.beforeNextPage === 'function') {
@@ -61,6 +64,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   }
 
   public async exec(): Promise<IteratorResult<T>> {
+    if (this._state === 'queued') this._state = 'started';
     return this._responseGenerator.next();
   }
 
@@ -69,16 +73,18 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   }
 
   public finished(): Promise<T> {
+    if (this._state === 'complete::success') {
+      return Promise.resolve(this.results());
+    } else if (this._state === 'complete::error') {
+      return Promise.reject(this._receivedError);
+    }
+
     let onComplete: () => void;
     let onError: (e: Error) => void;
 
     return new Promise<T>((res, rej) => {
-      onComplete = (): void => {
-        res(this.results());
-      };
-      onError = (e: Error): void => {
-        rej(e);
-      };
+      onComplete = (): void => res(this.results());
+      onError = (e: Error): void => rej(e);
 
       this._completeListeners.add(onComplete);
       this._errorListeners.add(onError);
@@ -91,6 +97,8 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   public reset(): void {
     this._responseGenerator = this._createResponseGenerator();
     this._results = this._initResults();
+    this._state = 'queued';
+    this._receivedError = undefined;
   }
 
   public async *[Symbol.asyncIterator](): AsyncIterator<T> {
@@ -178,11 +186,14 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   }
 
   private _handleError(e: Error): void {
-    this._errorListeners.forEach(l => l(e));
+    this._state = 'complete::error';
+    this._receivedError = e;
+    this._errorListeners.forEach((l) => l(e));
   }
 
   private _handleComplete(): void {
-    this._completeListeners.forEach(l => l());
+    this._state = 'complete::success';
+    this._completeListeners.forEach((l) => l());
   }
 }
 

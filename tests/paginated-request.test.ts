@@ -1,18 +1,45 @@
-import { PaginatedRequest, PageInfo, PaginatedRequestConfig } from '../src/directus-service/paginated-request';
+import { PageInfo, PaginatedRequest, PaginatedRequestConfig } from '../src/directus-service/paginated-request';
 
-type MockResponse = { data: number[]; total: number };
-type MockAggregation = number[];
+type MockResponse = Readonly<{ data: MockAggregation; pageInfo: PageInfo }>;
+type MockAggregation = Readonly<number[]>;
+
+interface MockPaginatedRequestConfig extends PaginatedRequestConfig {
+  mockDataSet: MockAggregation;
+  mockResponses: MockResponse[];
+}
 
 /**
  * Implements a super basic mock PaginatedRequest to test the abstract class.
  */
 class MockPaginatedRequest extends PaginatedRequest<MockAggregation, MockResponse> {
-  public _sendNextRequestMock: jest.Mock<Promise<MockResponse>, []>;
+  public currentRequestIndex = 0;
+  public throwErrorOnRequest: Error | void = undefined;
 
-  constructor(config: PaginatedRequestConfig<MockResponse>) {
+  public mockDataSet: MockAggregation;
+  public mockResponses: MockResponse[];
+
+  constructor(config: MockPaginatedRequestConfig) {
     super(config);
-    this._sendNextRequestMock = config.sendNextRequest as any;
+    this.mockDataSet = config.mockDataSet;
+    this.mockResponses = config.mockResponses;
   }
+
+  public reset(): void {
+    super.reset();
+    this.currentRequestIndex = 0;
+    this.throwErrorOnRequest = undefined;
+  }
+
+  public _initResults(): MockAggregation {
+    return [];
+  }
+
+  public _sendNextRequest = jest.fn(
+    (_: PageInfo): Promise<MockResponse> => {
+      if (this.throwErrorOnRequest) return Promise.reject(this.throwErrorOnRequest);
+      return Promise.resolve(this.mockResponses[this.currentRequestIndex++]);
+    },
+  );
 
   public _resolveResults = jest.fn(
     (response: MockResponse): MockAggregation => {
@@ -26,37 +53,60 @@ class MockPaginatedRequest extends PaginatedRequest<MockAggregation, MockRespons
     },
   );
 
-  public _resolveNextPageInfo = jest.fn(
-    (currentPageInfo: PageInfo, response: MockResponse): PageInfo => {
-      const currentOffset = currentPageInfo.currentOffset + response.data.length;
-      return {
-        currentOffset,
-        hasNextPage: currentOffset < response.total,
-      };
-    },
-  );
+  public _resolveNextPageInfo = jest.fn((_: PageInfo, { pageInfo }: MockResponse): PageInfo => pageInfo);
 }
 
 describe('PaginatedRequest', () => {
+  let mockDataSet: MockAggregation;
+  let mockResponses: MockResponse[];
   let mockRequest: MockPaginatedRequest;
   let flushAll: (req: MockPaginatedRequest) => Promise<void>;
-  const fullMockDataSet = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
-  const mockResponses: MockResponse[] = [
-    { data: fullMockDataSet.slice(0, 4), total: fullMockDataSet.length },
-    { data: fullMockDataSet.slice(4, 8), total: fullMockDataSet.length },
-    { data: fullMockDataSet.slice(8, fullMockDataSet.length), total: fullMockDataSet.length },
-  ];
+  let flushCount: (req: MockPaginatedRequest, count: number) => Promise<void>;
 
   beforeEach(() => {
-    mockRequest = new MockPaginatedRequest({
-      sendNextRequest: ((): any => {
-        let i = 0;
-        return jest.fn((): Promise<MockResponse> => Promise.resolve(mockResponses[i++]));
-      })(),
-    });
+    mockDataSet = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+    mockResponses = [
+      {
+        data: mockDataSet.slice(0, 4),
+        pageInfo: {
+          currentOffset: 4,
+          currentPage: 1,
+          hasNextPage: true,
+          resultCount: mockDataSet.length,
+          totalPageCount: 3,
+        },
+      },
+      {
+        data: mockDataSet.slice(4, 8),
+        pageInfo: {
+          currentOffset: 8,
+          currentPage: 2,
+          hasNextPage: true,
+          resultCount: mockDataSet.length,
+          totalPageCount: 3,
+        },
+      },
+      {
+        data: mockDataSet.slice(8),
+        pageInfo: {
+          currentOffset: mockDataSet.length,
+          currentPage: 3,
+          hasNextPage: false,
+          resultCount: mockDataSet.length,
+          totalPageCount: 3,
+        },
+      },
+    ];
+    mockRequest = new MockPaginatedRequest({ mockDataSet, mockResponses });
     flushAll = async (req: MockPaginatedRequest): Promise<void> => {
       while (!(await req.exec()).done) {
         void 0;
+      }
+    };
+    flushCount = async (req: MockPaginatedRequest, count: number): Promise<void> => {
+      let i = 0;
+      while (i < count && !(await req.exec()).done) {
+        i++;
       }
     };
   });
@@ -65,43 +115,10 @@ describe('PaginatedRequest', () => {
     expect(() => {
       new MockPaginatedRequest(null as any);
     }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest(undefined as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest(9 as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest(['test'] as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest('random' as any);
-    }).toThrow(TypeError);
   });
 
-  it(`Should throw when a non-function 'config.sendNextRequest' is provided`, () => {
-    expect(() => {
-      new MockPaginatedRequest({} as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest({ sendNextRequest: null } as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest({ sendNextRequest: undefined } as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest({ sendNextRequest: 9 } as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest({ sendNextRequest: ['test'] } as any);
-    }).toThrow(TypeError);
-    expect(() => {
-      new MockPaginatedRequest({ sendNextRequest: 'random' } as any);
-    }).toThrow(TypeError);
-  });
-
-  it(`Should return 'void' for results before executing`, () => {
-    expect(mockRequest.results()).toBeUndefined();
+  it(`Should initialize the results container correctly`, () => {
+    expect(mockRequest.results()).toEqual([]);
   });
 
   it(`Should return iterated responses correctly`, async () => {
@@ -127,7 +144,7 @@ describe('PaginatedRequest', () => {
       expect(mockRequest.results()).toEqual(dataSoFar);
     }
 
-    expect(mockRequest.results()).toEqual(fullMockDataSet);
+    expect(mockRequest.results()).toEqual(mockDataSet);
   });
 
   it(`Should call the 'sendNextRequest' function with the correct arguments`, async () => {
@@ -136,16 +153,15 @@ describe('PaginatedRequest', () => {
     const expectedPageInfos: PageInfo[] = [
       {
         currentOffset: 0,
+        currentPage: 0,
+        resultCount: 0,
+        totalPageCount: 0,
         hasNextPage: true,
       },
     ];
 
-    for (const response of mockResponses) {
-      expectedPageInfos.push({
-        currentOffset: expectedPageInfos[expectedPageInfos.length - 1].currentOffset + response.data.length,
-        hasNextPage:
-          expectedPageInfos[expectedPageInfos.length - 1].currentOffset + response.data.length < fullMockDataSet.length,
-      });
+    for (const { pageInfo } of mockResponses) {
+      expectedPageInfos.push({ ...pageInfo });
     }
 
     await flushAll(mockRequest);
@@ -154,9 +170,9 @@ describe('PaginatedRequest', () => {
 
     // The last page info should return 'false' to the request runner and
     // should result in no more calls to _sendNextRequest.
-    expect(mockRequest._sendNextRequestMock.mock.calls.length).toBe(expectedPageInfos.length - 1);
+    expect(mockRequest._sendNextRequest.mock.calls.length).toBe(expectedPageInfos.length - 1);
 
-    for (const [firstArg] of mockRequest._sendNextRequestMock.mock.calls as any) {
+    for (const [firstArg] of mockRequest._sendNextRequest.mock.calls as any) {
       expect(firstArg).toEqual(expectedPageInfos[i++]);
     }
   });
@@ -180,14 +196,14 @@ describe('PaginatedRequest', () => {
 
     // Build the expected args. the 'ith' call should be passed the data
     // from calls 0..i-1 & the current response data. The first call should
-    // receive 'undefined' as the data so far.
+    // receive '[]' as the data so far.
     const expectedAggArgument: (void | number[])[] = mockResponses.reduce(
       (agg, res) => {
         const lastResult: number[] = (agg[agg.length - 1] as any) ?? [];
         agg.push([...lastResult, ...res.data]);
         return agg;
       },
-      [undefined] as (void | number[])[],
+      [[]] as number[][],
     );
 
     await flushAll(mockRequest);
@@ -202,36 +218,188 @@ describe('PaginatedRequest', () => {
     }
   });
 
-  it(`Should not throw away results when 'config.sendNextRequest' throws`, async () => {
+  it(`Should not throw away results when '_sendNextRequest' throws`, async () => {
     expect.assertions(2);
     const midpoint = Math.floor(mockResponses.length / 2);
-    const testRequest = new MockPaginatedRequest({
-      sendNextRequest: ((): any => {
-        let i = 0;
-        return jest.fn(
-          (): Promise<MockResponse> =>
-            i < midpoint ? Promise.resolve(mockResponses[i++]) : Promise.reject(new Error('TEST_REJECTION')),
-        );
-      })(),
-    });
 
     const expectedResults = mockResponses
       .slice(0, midpoint)
       .reduce((agg, { data }) => [...agg, ...data], [] as number[]);
 
-    await expect(flushAll(testRequest)).rejects.toThrow();
-    expect(testRequest.results()).toEqual(expectedResults);
+    await flushCount(mockRequest, midpoint);
+    mockRequest.throwErrorOnRequest = new Error('TEST_REJECTION');
+
+    await expect(flushAll(mockRequest)).rejects.toThrow();
+    expect(mockRequest.results()).toEqual(expectedResults);
   });
 
-  it(`Should use the same iterator for subsequent 'exec' calls`, () => {
-    expect(1).toBe(2);
+  it(`Should not throw away container when 'config.sendNextRequest' only throws`, async () => {
+    expect.assertions(2);
+    mockRequest.throwErrorOnRequest = new Error('TEST_REJECTION');
+
+    await expect(flushAll(mockRequest)).rejects.toThrow();
+    expect(mockRequest.results()).toEqual([]);
   });
 
-  it(`Should continue to behave as a normal iterator when iteration is done`, () => {
-    expect(1).toBe(2);
+  it(`Should continue to behave as a normal iterator when iteration is done`, async () => {
+    expect.assertions(2);
+
+    await flushAll(mockRequest);
+
+    expect(mockRequest.results()).toEqual(mockDataSet);
+
+    await flushAll(mockRequest);
+    await flushAll(mockRequest);
+
+    expect(mockRequest.results()).toEqual(mockDataSet);
   });
 
-  it(`Should reset it's state completely when 'reset' is called`, () => {
-    expect(1).toBe(2);
+  it(`Should reset any results completely when 'reset' is called`, async () => {
+    expect.assertions(6);
+
+    await flushAll(mockRequest);
+    expect(mockRequest.results()).toEqual(mockDataSet);
+
+    mockRequest.reset();
+    expect(mockRequest.results()).toEqual([]);
+
+    await flushAll(mockRequest);
+    expect(mockRequest.results()).toEqual(mockDataSet);
+
+    mockRequest.reset();
+    expect(mockRequest.results()).toEqual([]);
+
+    await flushCount(mockRequest, 1);
+    expect(mockRequest.results()).toEqual(mockResponses[0].data);
+
+    mockRequest.reset();
+    expect(mockRequest.results()).toEqual([]);
+  });
+
+  it(`Should reset any error completely when 'reset' is called`, async () => {
+    expect.assertions(8);
+
+    mockRequest.throwErrorOnRequest = new Error('TEST_ERROR');
+    await expect(flushAll(mockRequest)).rejects.toThrow();
+    expect(mockRequest.results()).toEqual([]);
+
+    mockRequest.reset();
+    expect(mockRequest.results()).toEqual([]);
+    await flushAll(mockRequest);
+    expect(mockRequest.results()).toEqual(mockDataSet);
+
+    mockRequest.reset();
+    await flushCount(mockRequest, 1);
+    expect(mockRequest.results()).toEqual(mockResponses[0].data);
+
+    mockRequest.throwErrorOnRequest = new Error('TEST_ERROR');
+    await expect(flushAll(mockRequest)).rejects.toThrow();
+
+    mockRequest.reset();
+    expect(mockRequest.results()).toEqual([]);
+    await flushAll(mockRequest);
+    expect(mockRequest.results()).toEqual(mockDataSet);
+  });
+
+  it(`Should resolve the 'finished()' promise once complete all pages fetched`, async () => {
+    expect.assertions(1);
+    setImmediate(() => flushAll(mockRequest));
+
+    await expect(
+      Promise.race([
+        mockRequest.finished(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('TIMEOUT')), 10 * 5000)),
+      ]),
+    ).resolves.toEqual(mockDataSet);
+  });
+
+  it(`Should reject the 'finished()' promise if an error is encountered`, async () => {
+    expect.assertions(1);
+
+    setImmediate(async () => {
+      await flushCount(mockRequest, 1);
+      mockRequest.throwErrorOnRequest = new Error('TEST_ERROR');
+      flushAll(mockRequest).catch(() => void 0);
+    });
+
+    await expect(
+      Promise.race([
+        mockRequest.finished(),
+        // Resolve with timeout error as we're expecting a rejection.
+        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+      ]),
+    ).rejects.toBeInstanceOf(Error);
+  });
+
+  it(`Should auto-resolve the 'finished()' promise if the request is already done.`, async () => {
+    expect.assertions(1);
+
+    await flushAll(mockRequest);
+
+    await expect(
+      Promise.race([
+        mockRequest.finished(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('TIMEOUT')), 10 * 5000)),
+      ]),
+    ).resolves.toEqual(mockDataSet);
+  });
+
+  it(`Should auto-reject the 'finished()' promise if an error was already encountered`, async () => {
+    expect.assertions(1);
+
+    await flushCount(mockRequest, 1);
+    mockRequest.throwErrorOnRequest = new Error('TEST_ERROR');
+    await flushAll(mockRequest).catch(() => void 0);
+
+    await expect(
+      Promise.race([
+        mockRequest.finished(),
+        // Resolve with timeout error as we're expecting a rejection.
+        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+      ]),
+    ).rejects.toBeInstanceOf(Error);
+  });
+
+  it(`Should not allow the 'finished()' promise resolution to be affected by 'reset' calls`, async () => {
+    expect.assertions(1);
+
+    setImmediate(async () => {
+      mockRequest.reset();
+      await flushCount(mockRequest, 1);
+      mockRequest.reset();
+      await flushCount(mockRequest, mockResponses.length - 1);
+      mockRequest.reset();
+      flushAll(mockRequest);
+    });
+
+    await expect(
+      Promise.race([
+        mockRequest.finished(),
+        new Promise((_, rej) => setTimeout(() => rej(new Error('TIMEOUT')), 10 * 5000)),
+      ]),
+    ).resolves.toEqual(mockDataSet);
+  });
+
+  it(`Should not allow the 'finished()' promise rejection to be affected by 'reset' calls`, async () => {
+    expect.assertions(1);
+
+    setImmediate(async () => {
+      mockRequest.reset();
+      await flushCount(mockRequest, 1);
+      mockRequest.reset();
+      await flushCount(mockRequest, mockResponses.length - 1);
+      mockRequest.reset();
+      await flushCount(mockRequest, 1);
+      mockRequest.throwErrorOnRequest = new Error('TEST_ERROR');
+      flushAll(mockRequest).catch(() => void 0);
+    });
+
+    await expect(
+      Promise.race([
+        mockRequest.finished(),
+        // Resolve with timeout error as we're expecting a rejection.
+        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+      ]),
+    ).rejects.toBeInstanceOf(Error);
   });
 });

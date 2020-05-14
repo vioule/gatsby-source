@@ -23,7 +23,7 @@ describe('PaginatedDirectusApiRequest', () => {
   let flushAll: (req: MockRequest) => Promise<void>;
   const fullMockDataSet = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10];
   const dataParts = [fullMockDataSet.slice(0, 4), fullMockDataSet.slice(4, 8), fullMockDataSet.slice(8)];
-  const mockResponses = dataParts.map(part => buildResponse(part));
+  const mockResponses = dataParts.map((part) => buildResponse(part));
 
   beforeEach(() => {
     mockRequest = new MockRequest({
