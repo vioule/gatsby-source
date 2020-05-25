@@ -237,7 +237,6 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
     if (typeof limit === 'number' && limit >= -1 && Number.isFinite(limit)) {
       this.limit = limit;
     }
-    this.chunkSize = chunkSize;
     this._initialParams = initialParams;
     this._makeApiRequest = makeApiRequest;
   }
