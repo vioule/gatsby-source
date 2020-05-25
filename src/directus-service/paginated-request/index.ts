@@ -203,8 +203,8 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
 
 export interface PaginatedDirectusApiRequestConfig<T = unknown> extends PaginatedRequestConfig {
   id: string;
-  chunkSize: number;
-  limit: number;
+  chunkSize?: number;
+  limit?: number;
   makeApiRequest(params: QueryParams): Promise<IAPIResponse<T | T[], IAPIMetaList>>;
   initialParams?: QueryParams;
 }
