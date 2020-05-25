@@ -39,7 +39,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   private _receivedError: Error | void = undefined;
   private _responseGenerator: AsyncGenerator<T>;
 
-  private _timeout = 15 * 1000;
+  private _timeout: number | void;
   private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
 
   private _state: PaginatedRequestState = 'queued';
@@ -53,12 +53,16 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
       this._beforeNextPage = config.beforeNextPage;
     }
 
-    if (
-      typeof config.timeout === 'number' &&
-      !isNaN(config.timeout) &&
-      Number.isFinite(config.timeout) &&
-      config.timeout >= 0
-    ) {
+    if (typeof config.timeout !== 'undefined' && config !== null) {
+      if (
+        typeof config.timeout !== 'number' ||
+        isNaN(config.timeout) ||
+        !Number.isFinite(config.timeout) ||
+        config.timeout < 0
+      ) {
+        throw new TypeError(`Expected positive, finite 'timeout' integer (or void). Received ${config.timeout}`);
+      }
+
       this._timeout = config.timeout;
     }
   }
@@ -157,7 +161,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
       hasNextPage: true,
     };
 
-    while (pageInfo.hasNextPage && this._beforeNextPage(pageInfo, this)) {
+    while (pageInfo.hasNextPage && this._beforeNextPage(pageInfo, this) !== false) {
       try {
         const response = await this._wrapTimeout(this._sendNextRequest(pageInfo), this._timeout);
         const result = this._resolveResults(response);
@@ -174,7 +178,7 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
     this._handleComplete();
   }
 
-  private _wrapTimeout<W>(prom: Promise<W>, timeout = 0): Promise<W> {
+  private _wrapTimeout<W>(prom: Promise<W>, timeout: number | void = 0): Promise<W> {
     if (typeof timeout !== 'number' || isNaN(timeout) || !Number.isFinite(timeout) || timeout <= 0) {
       return prom;
     }
@@ -188,12 +192,12 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   private _handleError(e: Error): void {
     this._state = 'complete::error';
     this._receivedError = e;
-    this._errorListeners.forEach((l) => l(e));
+    this._errorListeners.forEach(l => l(e));
   }
 
   private _handleComplete(): void {
     this._state = 'complete::success';
-    this._completeListeners.forEach((l) => l());
+    this._completeListeners.forEach(l => l());
   }
 }
 

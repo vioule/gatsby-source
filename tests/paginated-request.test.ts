@@ -14,6 +14,7 @@ interface MockPaginatedRequestConfig extends PaginatedRequestConfig {
 class MockPaginatedRequest extends PaginatedRequest<MockAggregation, MockResponse> {
   public currentRequestIndex = 0;
   public throwErrorOnRequest: Error | void = undefined;
+  public networkDelay = 0;
 
   public mockDataSet: MockAggregation;
   public mockResponses: MockResponse[];
@@ -27,6 +28,7 @@ class MockPaginatedRequest extends PaginatedRequest<MockAggregation, MockRespons
   public reset(): void {
     super.reset();
     this.currentRequestIndex = 0;
+    this.networkDelay = 0;
     this.throwErrorOnRequest = undefined;
   }
 
@@ -35,7 +37,8 @@ class MockPaginatedRequest extends PaginatedRequest<MockAggregation, MockRespons
   }
 
   public _sendNextRequest = jest.fn(
-    (_: PageInfo): Promise<MockResponse> => {
+    async (_: PageInfo): Promise<MockResponse> => {
+      if (this.networkDelay > 0) await new Promise(r => setTimeout(() => r(), this.networkDelay));
       if (this.throwErrorOnRequest) return Promise.reject(this.throwErrorOnRequest);
       return Promise.resolve(this.mockResponses[this.currentRequestIndex++]);
     },
@@ -326,7 +329,7 @@ describe('PaginatedRequest', () => {
       Promise.race([
         mockRequest.finished(),
         // Resolve with timeout error as we're expecting a rejection.
-        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+        new Promise(res => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
       ]),
     ).rejects.toBeInstanceOf(Error);
   });
@@ -355,7 +358,7 @@ describe('PaginatedRequest', () => {
       Promise.race([
         mockRequest.finished(),
         // Resolve with timeout error as we're expecting a rejection.
-        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+        new Promise(res => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
       ]),
     ).rejects.toBeInstanceOf(Error);
   });
@@ -398,8 +401,121 @@ describe('PaginatedRequest', () => {
       Promise.race([
         mockRequest.finished(),
         // Resolve with timeout error as we're expecting a rejection.
-        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+        new Promise(res => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
       ]),
     ).rejects.toBeInstanceOf(Error);
+  });
+
+  it(`Should call 'config.beforeNextRequest' before the next request.`, async () => {
+    // expect.assertions(mockDataSet.length + 1);
+    expect.assertions(mockResponses.length * 2 + 1);
+
+    const beforeNextPage = jest.fn((_: PageInfo, request: PaginatedRequest) => true);
+
+    mockRequest = new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage });
+
+    await flushAll(mockRequest);
+
+    const expectedPageInfos: PageInfo[] = [
+      {
+        currentOffset: 0,
+        currentPage: 0,
+        hasNextPage: true,
+        resultCount: 0,
+        totalPageCount: 0,
+      },
+      ...mockResponses.slice(0, mockResponses.length - 1).map(({ pageInfo }) => pageInfo),
+    ];
+
+    expect(beforeNextPage.mock.calls.length).toBe(expectedPageInfos.length);
+
+    let i = 0;
+    for (const [firstArg, secondArg] of beforeNextPage.mock.calls) {
+      expect(firstArg).toEqual(expectedPageInfos[i++]);
+      expect(secondArg).toBe(mockRequest);
+    }
+  });
+
+  it(`Should not continue if 'config.beforeNextRequest' returns 'false'`, async () => {
+    expect.assertions(2);
+
+    const beforeNextPage = jest.fn((p: PageInfo, _: PaginatedRequest) => p.currentPage < 2);
+    const expectedResults = mockResponses[0].data.concat(mockResponses[1].data);
+
+    mockRequest = new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage });
+
+    await flushAll(mockRequest);
+
+    expect(beforeNextPage.mock.calls.length).toBe(3);
+    expect(mockRequest.results()).toEqual(expectedResults);
+  });
+
+  it(`Should continue if 'config.beforeNextRequest' returns values that aren't 'false'`, async () => {
+    const mocks: MockPaginatedRequest[] = [
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => undefined as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => null as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => 0 as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => [] as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => ({} as any) }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => -1 as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => '' as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => 'false' as any }),
+      new MockPaginatedRequest({ mockDataSet, mockResponses, beforeNextPage: (): boolean => new Error() as any }),
+    ];
+
+    expect.assertions(mocks.length);
+
+    await Promise.all(mocks.map(r => flushAll(r)));
+
+    for (const r of mocks) {
+      expect(r.results()).toEqual(mockDataSet);
+    }
+  });
+
+  it(`Should throw if an invalid 'config.timeout' is provided`, () => {
+    expect(() => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: -1 as any })).toThrow();
+    expect(
+      () => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: Number.POSITIVE_INFINITY as any }),
+    ).toThrow();
+    expect(
+      () => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: Number.NEGATIVE_INFINITY as any }),
+    ).toThrow();
+    expect(() => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: [] as any })).toThrow();
+    expect(() => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: {} as any })).toThrow();
+    expect(() => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: '' as any })).toThrow();
+    expect(() => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: 'false' as any })).toThrow();
+    expect(() => new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: new Error() as any })).toThrow();
+  });
+
+  it(`Should throw if the given timeout is exceeded`, async () => {
+    expect.assertions(2);
+
+    // Test timeout for first request
+    const request_1 = new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: 500 });
+    request_1.networkDelay = 1500;
+    await expect(flushAll(request_1)).rejects.toBeInstanceOf(Error);
+
+    // Test timeout for middle request
+    const request_2 = new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: 500 });
+    await flushCount(request_2, 1);
+    request_2.networkDelay = 1500;
+    await expect(flushAll(request_2)).rejects.toBeInstanceOf(Error);
+  });
+
+  it(`Should not throw if the timeout is not exceeded`, async () => {
+    expect.assertions(2);
+
+    // Test timeout for first request
+    const request_1 = new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: 1500 });
+    request_1.networkDelay = 100;
+    await flushAll(request_1);
+    expect(request_1.results()).toEqual(mockDataSet);
+
+    // Test timeout for middle request
+    const request_2 = new MockPaginatedRequest({ mockDataSet, mockResponses, timeout: 1500 });
+    await flushCount(request_2, 1);
+    request_2.networkDelay = 100;
+    await flushAll(request_2);
+    expect(request_2.results()).toEqual(mockDataSet);
   });
 });
