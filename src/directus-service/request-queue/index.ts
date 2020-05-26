@@ -1,3 +1,5 @@
+import { IsInt, Min, IsPositive, validateSync } from 'class-validator';
+
 export interface QueueableRequest<T = unknown> {
   exec(): Promise<IteratorResult<T>>;
   results(): T;
@@ -24,23 +26,29 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
   private _failed: QueueableRequest<T>[] = [];
   private _completed: QueueableRequest<T>[] = [];
 
+  @IsInt({ message: 'Expected an integer maxConcurrentRequests, received $value' })
+  @IsPositive({ message: 'Expected a positive maxConcurrentRequests, received $value' })
   private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
+
+  @IsInt({ message: 'Expected an integer throttle, received $value' })
+  @Min(0, { message: 'Expected a throttle >= 0, received $value' })
   private _throttle = 0;
 
   private _currentFlush: Promise<void> | void = undefined;
 
   constructor(config: RequestQueueConfig) {
-    if (typeof config.maxConcurrentRequests === 'number' && config.maxConcurrentRequests > 0) {
+    if (typeof config.maxConcurrentRequests === 'number') {
       this._maxConcurrentRequests = config.maxConcurrentRequests;
     }
 
-    if (
-      typeof config.throttle === 'number' &&
-      !isNaN(config.throttle) &&
-      Number.isFinite(config.throttle) &&
-      config.throttle >= 0
-    ) {
+    if (typeof config.throttle === 'number') {
       this._throttle = config.throttle;
+    }
+
+    const validationErrors = validateSync(this);
+
+    if (validationErrors.length) {
+      throw new Error('Validation errors: \n' + validationErrors.join('\n'));
     }
   }
 
@@ -60,7 +68,7 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
   }
 
   public results(): T[] {
-    return this._completed.map(r => r.results());
+    return this._completed.map((r) => r.results());
   }
 
   private _scheduleFlush(): void {
@@ -84,7 +92,7 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
       // Wait for the throttle if present before
       // continuing to next request
       if (this._throttle > 0) {
-        await new Promise(r => setTimeout(r, this._throttle));
+        await new Promise((r) => setTimeout(r, this._throttle));
       }
     }
   }
@@ -113,6 +121,6 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
   }
 
   private _removeActive(request: Promise<IteratorResult<T, any>>): void {
-    this._active = this._active.filter(r => r !== request);
+    this._active = this._active.filter((r) => r !== request);
   }
 }

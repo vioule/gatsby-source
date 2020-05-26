@@ -197,7 +197,7 @@ export class DirectusService implements DirectusServiceAdaptor {
         `Files Collection - ${this._fileCollectionName}`,
         this._getCollectionChunkSize('directus_collections'),
         this._getCollectionLimit('directus_collections'),
-        params =>
+        (params) =>
           this._api.getCollections({
             ...this._getCollectionParams('directus_collections'),
             ...params,
@@ -236,7 +236,7 @@ export class DirectusService implements DirectusServiceAdaptor {
         'All Collections',
         this._getCollectionChunkSize('directus_collections'),
         this._getCollectionLimit('directus_collections'),
-        params =>
+        (params) =>
           this._api.getCollections({
             ...this._getCollectionParams('directus_collections'),
             ...params,
@@ -269,7 +269,7 @@ export class DirectusService implements DirectusServiceAdaptor {
         'All Relations',
         this._getCollectionChunkSize('directus_relations'),
         this._getCollectionLimit('directus_relations'),
-        params =>
+        (params) =>
           this._api.getRelations({
             ...this._getCollectionParams('directus_relations'),
             ...params,
@@ -296,7 +296,7 @@ export class DirectusService implements DirectusServiceAdaptor {
         `Collection Records - ${collection}`,
         this._getCollectionChunkSize(collection),
         this._getCollectionLimit(collection),
-        params =>
+        (params) =>
           this._api.getItems(collection, {
             ...this._getCollectionParams(collection),
             fields: '*.*',
@@ -308,7 +308,7 @@ export class DirectusService implements DirectusServiceAdaptor {
 
       const results = await request.finished();
 
-      return results.filter(record => this._shouldIncludeRecord(record, collection));
+      return results.filter((record) => this._shouldIncludeRecord(record, collection));
     } catch (e) {
       log.error(`Failed to fetch records for collection "${collection}"`);
       log.error(`Did you grant READ permissions?`);
@@ -341,7 +341,7 @@ export class DirectusService implements DirectusServiceAdaptor {
         `All Files`,
         this._getCollectionChunkSize('directus_files'),
         this._getCollectionLimit('directus_files'),
-        params =>
+        (params) =>
           this._api.getFiles({
             ...this._getCollectionParams('directus_files'),
             ...params,
@@ -370,23 +370,22 @@ export class DirectusService implements DirectusServiceAdaptor {
     fn: (params: QueryParams) => Promise<T>,
   ): PaginatedDirectusApiRequest<T['data'] extends Array<infer J> ? J : T['data']> {
     return new PaginatedDirectusApiRequest<T>({
-      id,
       chunkSize,
       limit,
       timeout: this._apiRequestConfig.timeout,
       makeApiRequest: (params: QueryParams): Promise<IAPIResponse<T, IAPIMetaList>> => fn(params) as any,
-      beforeNextPage: this._beforeNextPaginatedRequest as any,
+      beforeNextPage: this._genBeforeNextPaginatedRequest(id) as any,
     }) as any;
   }
 
-  private _beforeNextPaginatedRequest = (
+  private _genBeforeNextPaginatedRequest = (reqId: string) => (
     { resultCount, totalPageCount, currentPage }: PageInfo,
     req: PaginatedDirectusApiRequest<any>,
   ): boolean => {
     this._totalResults += resultCount;
 
     log.info(
-      `Fetching ${req.id} ${
+      `Fetching ${reqId} ${
         totalPageCount > 0
           ? `(page ${currentPage + 1} of ${totalPageCount}) ${req.limit >= 0 ? `(limit: ${req.limit})` : ''}`
           : ''

@@ -1,5 +1,6 @@
 import { IAPIMetaList, IAPIResponse } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';
+import { IsDefined, IsInt, IsOptional, IsPositive, Max, Min, validateSync } from 'class-validator';
 import { QueueableRequest } from '../request-queue';
 
 /**
@@ -39,7 +40,12 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   private _receivedError: Error | void = undefined;
   private _responseGenerator: AsyncGenerator<T>;
 
+  @IsOptional()
+  @IsInt({ message: 'Expected an integer, received $value' })
+  @IsPositive({ message: 'Expected a positive number, received $value' })
+  @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite number, received $value' })
   private _timeout: number | void;
+
   private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
 
   private _state: PaginatedRequestState = 'queued';
@@ -53,17 +59,12 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
       this._beforeNextPage = config.beforeNextPage;
     }
 
-    if (typeof config.timeout !== 'undefined' && config !== null) {
-      if (
-        typeof config.timeout !== 'number' ||
-        isNaN(config.timeout) ||
-        !Number.isFinite(config.timeout) ||
-        config.timeout < 0
-      ) {
-        throw new TypeError(`Expected positive, finite 'timeout' integer (or void). Received ${config.timeout}`);
-      }
+    this._timeout = config.timeout;
 
-      this._timeout = config.timeout;
+    const validationErrors = validateSync(this);
+
+    if (validationErrors.length) {
+      throw new Error('Validation errors: \n' + validationErrors.join('\n'));
     }
   }
 
@@ -192,17 +193,16 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   private _handleError(e: Error): void {
     this._state = 'complete::error';
     this._receivedError = e;
-    this._errorListeners.forEach(l => l(e));
+    this._errorListeners.forEach((l) => l(e));
   }
 
   private _handleComplete(): void {
     this._state = 'complete::success';
-    this._completeListeners.forEach(l => l());
+    this._completeListeners.forEach((l) => l());
   }
 }
 
 export interface PaginatedDirectusApiRequestConfig<T = unknown> extends PaginatedRequestConfig {
-  id: string;
   chunkSize?: number;
   limit?: number;
   makeApiRequest(params: QueryParams): Promise<IAPIResponse<T | T[], IAPIMetaList>>;
@@ -213,16 +213,24 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
   T[],
   IAPIResponse<T | T[], IAPIMetaList>
 > {
-  public readonly id: string;
-
+  @IsInt({ message: 'Expected an integer chunkSize, received $value' })
+  @Min(0, { message: 'Expected a chunkSize >= 0, received $value' })
+  @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite chunkSize, received $value' })
   public readonly chunkSize: number = 0;
+
+  @IsInt({ message: 'Expected an integer limit, received $value' })
+  @Min(-1, { message: 'Expected a limit >= -1, received $value' })
+  @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite limit, received $value' })
   public readonly limit: number = -1;
 
+  // We won't validate the initial params, a task that should be delegated to the
+  // API service layer.
   private _initialParams: QueryParams;
-  private _makeApiRequest: (params: QueryParams) => Promise<IAPIResponse<T | T[], IAPIMetaList>>;
+
+  @IsDefined()
+  private _makeApiRequest!: (params: QueryParams) => Promise<IAPIResponse<T | T[], IAPIMetaList>>;
 
   constructor({
-    id,
     chunkSize,
     limit,
     makeApiRequest,
@@ -230,15 +238,25 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
     ...restConfig
   }: PaginatedDirectusApiRequestConfig<T>) {
     super(restConfig);
-    this.id = id;
-    if (typeof chunkSize === 'number' && chunkSize > 0 && Number.isFinite(chunkSize)) {
+    if (typeof chunkSize === 'number') {
       this.chunkSize = chunkSize;
     }
-    if (typeof limit === 'number' && limit >= -1 && Number.isFinite(limit)) {
+
+    if (typeof limit === 'number') {
       this.limit = limit;
     }
+
     this._initialParams = initialParams;
-    this._makeApiRequest = makeApiRequest;
+
+    if (typeof makeApiRequest === 'function') {
+      this._makeApiRequest = makeApiRequest;
+    }
+
+    const validationErrors = validateSync(this);
+
+    if (validationErrors.length) {
+      throw new Error('Validation errors: \n' + validationErrors.join('\n'));
+    }
   }
 
   protected _initResults(): T[] {

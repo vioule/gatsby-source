@@ -38,6 +38,7 @@
   "homepage": "https://github.com/directus/gatsby-source#readme",
   "dependencies": {
     "@directus/sdk-js": "^6.1.1",
+    "class-validator": "^0.12.2",
     "colors": "^1.4.0",
     "gatsby-node-helpers": "^0.3.0",
     "gatsby-source-filesystem": "^2.3.8",
