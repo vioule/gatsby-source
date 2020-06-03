@@ -5,6 +5,8 @@ Colors.black;
 
 export const log = {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  debug: (msg: string, ...args: any[]): void => console.debug('debug'.gray, 'directus'.blue, msg, ...args),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   info: (msg: string, ...args: any[]): void => console.log('info'.cyan, 'directus'.blue, msg, ...args),
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   warn: (msg: string, ...args: any[]): void => console.log('warning'.yellow, 'directus'.blue, msg, ...args),

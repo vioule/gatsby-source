@@ -10,7 +10,7 @@ import { log } from '../utils';
 import { PageInfo, PaginatedDirectusApiRequest } from './paginated-request';
 import { BasicRequestQueue, RequestQueue } from './request-queue';
 
-export type EditableQueryParams = Omit<QueryParams, 'meta' | 'fields' | 'offset' | 'single'>;
+export type EditableQueryParams = Omit<QueryParams, 'meta' | 'offset' | 'single'>;
 export type CustomQueryParams = { chunkSize?: number };
 export type GlobalQueryParams = EditableQueryParams & CustomQueryParams;
 export type CollectionSpecificQueryParams = EditableQueryParams & CustomQueryParams;

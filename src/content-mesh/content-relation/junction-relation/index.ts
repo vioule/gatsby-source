@@ -1,6 +1,7 @@
 import { ContentCollection } from '../../content-collection';
 import { ContentRelationConfig, ContentRelation } from '..';
 import { ContentNode } from '../../content-node';
+import { log } from '../../../utils';
 
 export interface JunctionContentRelationConfig extends ContentRelationConfig {
   srcJunctionField: string;
@@ -22,9 +23,10 @@ export class JunctionContentRelation extends ContentRelation {
     config.junctionTable.flagJunction();
   }
 
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   protected _getRelatedJunctionRecords(targetId: string, tableType: 'src' | 'dest'): any[] {
-    const targetJuncField = tableType === 'src' ? this._srcJunctionField : this._destJunctionField;
-    const destJuncField = tableType === 'src' ? this._destJunctionField : this._srcJunctionField;
+    const targetJuncField = tableType === 'src' ? this._destJunctionField : this._srcJunctionField;
+    const destJuncField = tableType === 'src' ? this._srcJunctionField : this._destJunctionField;
 
     return this._junctionTable
       .getNodes()
@@ -38,13 +40,8 @@ export class JunctionContentRelation extends ContentRelation {
   }
 
   protected _resolveNodeRelation(node: ContentNode, tableType: 'src' | 'dest'): void | ContentNode | ContentNode[] {
-    // const targetField = tableType === 'src' ? this._srcField : this._destField;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-
-    // const existing: any[] = node.contents[targetField] || [];
     const existing: any[] = this._getRelatedJunctionRecords(node.primaryKey, tableType);
-
-    // console.log('Resolving JUNCTION relation', { existing, targetField, tableType, table: this._junctionTable.name });
 
     // Explicit cast here because we're filtering out any
     // 'void' values.
@@ -53,13 +50,16 @@ export class JunctionContentRelation extends ContentRelation {
       .map(({ src, dest }) => (tableType === 'src' ? dest : src))
       .filter((node) => !!node) as ContentNode[];
 
-    // return []
+    const targetField = tableType === 'src' ? this._srcField : this._destField;
+    const targetTable = tableType === 'src' ? this._srcTable : this._destTable;
+    const destField = tableType === 'src' ? this._destField : this._srcField;
+    const destTable = tableType === 'src' ? this._destTable : this._srcTable;
 
-    console.warn('resolving JUNCTION relation', {
-      id: node.primaryKey,
-      tableType,
-      existing: related.map((p) => p.primaryKey),
-    });
+    log.debug(
+      `Resolved M2M node relations for ${targetTable.name}.${node.primaryKey}.${targetField} <-> ${
+        destTable.name
+      }.[${related.map((p) => p.primaryKey).join(', ')}].${destField}`,
+    );
 
     return related;
   }

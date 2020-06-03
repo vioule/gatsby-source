@@ -1,5 +1,6 @@
 import { ContentRelation, ContentRelationConfig } from '..';
 import { ContentNode } from '../../content-node';
+import { log } from '../../../utils';
 
 export type SimpleContentRelationConfig = ContentRelationConfig;
 
@@ -17,32 +18,28 @@ export class SimpleContentRelation extends ContentRelation {
 
   protected _resolveNodeRelation(node: ContentNode, tableType: 'src' | 'dest'): void | ContentNode | ContentNode[] {
     if (tableType === 'src') {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const related = this._getRelatedRecords(node.primaryKey, tableType);
 
-      // const existing: any[] = node.contents[this._srcField] || [];
-      //
-      // return existing.map(record => this._destTable.getByPrimaryKey(record)).filter(node => !!node) as ContentNode[];
+      log.debug(
+        `Resolved O2M node relations for ${this._srcTable.name}:${node.primaryKey}:${this._srcField} <-> ${
+          this._destTable.name
+        }:[${related.map((p) => p.primaryKey).join(', ')}]:${this._destField}`,
+      );
 
-      const existing = this._getRelatedRecords(node.primaryKey, tableType);
-
-      console.warn('resolving SIMPLE relation', {
-        id: node.primaryKey,
-        tableType,
-        existing: existing.map((p) => p.primaryKey),
-      });
-
-      return existing;
+      return related;
     } else {
       const existing = node.contents[this._destField];
 
       if (existing) {
         const related = this._srcTable.getByPrimaryKey(existing);
 
-        console.warn('resolving SIMPLE relation', {
-          id: node.primaryKey,
-          tableType,
-          existing: !!related && related.primaryKey,
-        });
+        log.debug(
+          `Resolved O2M node relations for ${this._destTable.name}:${node.primaryKey}:${this._destField} <-> ${
+            this._srcTable.name
+          }:${related ? related.primaryKey : 'NONE'}:${this._srcField}`,
+        );
+
+        return related;
       }
     }
   }

@@ -2,6 +2,7 @@ import { ContentCollection } from '../../content-collection';
 import { ContentRelation } from '..';
 import { ContentNode } from '../../content-node';
 import { ContentMesh } from '../..';
+import { log } from '../../../utils';
 
 export interface FileContentRelationConfig {
   fileTable: ContentCollection;
@@ -31,13 +32,11 @@ export class FileContentRelation extends ContentRelation {
 
     if (existing) {
       const related = this._srcTable.getByPrimaryKey(existing);
-
-      console.warn('resolving FILE relation', {
-        id: node.primaryKey,
-        tableType,
-        existing: !!related && related.primaryKey,
-      });
-
+      log.debug(
+        `Resolved File node relations for ${this._destTable.name}:${node.primaryKey}.${this._destField} <-> ${
+          this._srcTable.name
+        }.${related ? related.primaryKey : 'NONE'}:${this._srcField}`,
+      );
       return related;
     }
   }

@@ -66,7 +66,7 @@ export class ContentMesh {
         // Warn the user if we think the relation should have been processed.
         // eslint-disable-next-line @typescript-eslint/camelcase
         if (!collection_many.match(/^directus/) || !collection_one.match(/^directus/)) {
-          log.warn('Unable to resolve Directus relation', {
+          log.warn('Unable to create O2M relation', {
             config: relation,
             srcTable,
             destTable,
@@ -79,7 +79,7 @@ export class ContentMesh {
         return bag;
       } else if (!field_many || !field_one) {
         log.warn(
-          `Unable to resolve Directus relation. The source and/or dest field name is 'null'. This may be the result of old, no longer valid 'relation' records.`,
+          `Unable to create O2M relation. A source and/or dest field name is 'null'. This may be the result of stale 'directus_relations' records.`,
           {
             config: relation,
             srcTable: srcTable.name,
@@ -135,7 +135,7 @@ export class ContentMesh {
     // Process each junction pair.
     return Object.values(junctions).reduce((bag, [a, b]) => {
       if (!a || !b) {
-        log.warn('Unable to resolve Directus junction. Missing junction information.', { a, b });
+        log.warn('Unable to create M2M Directus junction. Missing junction information.', { a, b });
         return bag;
       }
 
@@ -144,7 +144,7 @@ export class ContentMesh {
       const junctionTable = this.getCollection(a.collection_many);
 
       if (!destTable || !srcTable || !junctionTable) {
-        log.warn('Unable to resolve Directus junction. Missing collections', {
+        log.warn('Unable to create M2M Directus junction. Missing collections', {
           destTable,
           srcTable,
           junctionTable,
@@ -158,7 +158,7 @@ export class ContentMesh {
         return bag;
       } else if (!a.field_one || !b.field_one || !a.junction_field || !b.junction_field) {
         log.warn(
-          `Unable to resolve Directus junction relation. The source and/or dest field name is 'null'. This may be the result of old, no longer valid 'relation' records.`,
+          `Unable to create M2M relation. A source and/or dest field name is 'null'. This may be the result of stale '${junctionTable.name}' records.`,
           {
             srcRelation: b,
             destRelation: a,

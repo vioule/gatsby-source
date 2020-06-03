@@ -40,14 +40,6 @@ export class GatsbyType {
 
     const nodes = await Promise.all(this._nodes.map((node) => node.build()));
 
-    // nodes.forEach(node => {
-    //   // Object.entries(node).forEach(([key, value]) => {
-    //   //   if (value === null) {
-    //   //     console.warn('NULL VALUE', key, value, node.id);
-    //   //   }
-    //   // })
-    // })
-
     return nodes.map((node) => formatter(node));
   }
 

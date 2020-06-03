@@ -288,8 +288,6 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
       throw new Error('Unable to determine result or total count');
     }
 
-    // console.log('resolving next page ifo', currentPageInfo, this.id, this._chunkSize);
-
     const nextOffset =
       currentPageInfo.currentOffset +
       Math.min(result_count, this.limit >= 0 ? this.limit - this.results.length : Number.POSITIVE_INFINITY);
