@@ -29,6 +29,16 @@ export class FileContentRelation extends ContentRelation {
 
     const existing = node.contents[this._destField];
 
-    if (existing) return this._srcTable.getByRecord(existing);
+    if (existing) {
+      const related = this._srcTable.getByPrimaryKey(existing);
+
+      console.warn('resolving FILE relation', {
+        id: node.primaryKey,
+        tableType,
+        existing: !!related && related.primaryKey,
+      });
+
+      return related;
+    }
   }
 }

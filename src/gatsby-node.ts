@@ -1,4 +1,3 @@
-import { validator } from './config-validator';
 import { ContentMesh } from './content-mesh';
 import { DirectusService, DirectusServiceConfig, DirectusServiceAdaptor } from './directus-service';
 import { GatsbyProcessor, GatsbyProcessorConfig } from './gatsby-processor';
@@ -12,14 +11,6 @@ export const sourceNodes = async (
   config: PluginConfig,
 ): Promise<void> => {
   log.info(`Validating config...`);
-
-  const configErrors = validator.validate(config);
-
-  if (configErrors.length) {
-    configErrors.forEach(e => log.error(e));
-    throw new Error('INVALID_CONFIG');
-  }
-
   log.info(`Starting...`);
 
   log.info(`URL: ${config.url}`);

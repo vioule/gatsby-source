@@ -299,7 +299,6 @@ export class DirectusService implements DirectusServiceAdaptor {
         (params) =>
           this._api.getItems(collection, {
             ...this._getCollectionParams(collection),
-            fields: '*.*',
             ...params,
           }),
       );

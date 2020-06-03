@@ -15,7 +15,7 @@ export class GatsbyNode {
 
   public getIds(node: ContentNode | ContentNode[]): string | string[] {
     if (Array.isArray(node)) {
-      return node.map(node => this._resolveId(node));
+      return node.map((node) => this._resolveId(node));
     }
 
     return this._resolveId(node);
@@ -35,8 +35,25 @@ export class GatsbyNode {
       (newContents, [field, relation]) => {
         delete newContents[field];
 
+        const relatedNodes = relation.getRelatedNodes();
+
+        const targetColName = (Array.isArray(relatedNodes)
+          ? (relatedNodes as ContentNode[])
+          : [relatedNodes as ContentNode]
+        ).map((n) => n.getCollection().name)[0];
+        const targetIds = (Array.isArray(relatedNodes)
+          ? (relatedNodes as ContentNode[])
+          : [relatedNodes as ContentNode]
+        ).map((n) => n.primaryKey);
+
+        console.warn(
+          `Mixing in relation ${this._node.getCollection().name}:${
+            this._node.primaryKey
+          } -> ${targetColName}:[${targetIds.join(', ')}]`,
+        );
+
         const newFieldName = GatsbyNode._formatFieldName(field);
-        newContents[newFieldName] = this.getIds(relation.getRelatedNodes());
+        newContents[newFieldName] = this.getIds(relatedNodes);
 
         return newContents;
       },

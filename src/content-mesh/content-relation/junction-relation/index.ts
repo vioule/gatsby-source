@@ -22,17 +22,46 @@ export class JunctionContentRelation extends ContentRelation {
     config.junctionTable.flagJunction();
   }
 
+  protected _getRelatedJunctionRecords(targetId: string, tableType: 'src' | 'dest'): any[] {
+    const targetJuncField = tableType === 'src' ? this._srcJunctionField : this._destJunctionField;
+    const destJuncField = tableType === 'src' ? this._destJunctionField : this._srcJunctionField;
+
+    return this._junctionTable
+      .getNodes()
+      .filter(
+        (r) =>
+          r.contents[destJuncField] != null &&
+          r.contents[targetJuncField] != null &&
+          r.contents[targetJuncField] === targetId,
+      )
+      .map((r) => r.contents);
+  }
+
   protected _resolveNodeRelation(node: ContentNode, tableType: 'src' | 'dest'): void | ContentNode | ContentNode[] {
-    const targetField = tableType === 'src' ? this._srcField : this._destField;
+    // const targetField = tableType === 'src' ? this._srcField : this._destField;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    const existing: any[] = node.contents[targetField] || [];
+
+    // const existing: any[] = node.contents[targetField] || [];
+    const existing: any[] = this._getRelatedJunctionRecords(node.primaryKey, tableType);
+
+    // console.log('Resolving JUNCTION relation', { existing, targetField, tableType, table: this._junctionTable.name });
 
     // Explicit cast here because we're filtering out any
     // 'void' values.
-    return existing
-      .map(junctionRecord => this._resolveJunctionNodes(junctionRecord))
+    const related = existing
+      .map((junctionRecord) => this._resolveJunctionNodes(junctionRecord))
       .map(({ src, dest }) => (tableType === 'src' ? dest : src))
-      .filter(node => !!node) as ContentNode[];
+      .filter((node) => !!node) as ContentNode[];
+
+    // return []
+
+    console.warn('resolving JUNCTION relation', {
+      id: node.primaryKey,
+      tableType,
+      existing: related.map((p) => p.primaryKey),
+    });
+
+    return related;
   }
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
