@@ -78,8 +78,8 @@ export class ContentMesh {
 
         return bag;
       } else if (!field_many || !field_one) {
-        log.warn(
-          `Unable to create O2M relation. A source and/or dest field name is 'null'. This may be the result of stale 'directus_relations' records.`,
+        log.debug(
+          `Unable to create O2M relation. A source and/or dest field name is 'null'. This may be the result of a stale 'directus_relations' record.`,
           {
             config: relation,
             srcTable: srcTable.name,
@@ -157,8 +157,8 @@ export class ContentMesh {
         log.warn('This may be a result of Directus keeping deleted junction information in internal tables.');
         return bag;
       } else if (!a.field_one || !b.field_one || !a.junction_field || !b.junction_field) {
-        log.warn(
-          `Unable to create M2M relation. A source and/or dest field name is 'null'. This may be the result of stale '${junctionTable.name}' records.`,
+        log.debug(
+          `Unable to create M2M relation. A source and/or dest field name is 'null'. This may be the result of a stale '${junctionTable.name}' records`,
           {
             srcRelation: b,
             destRelation: a,

@@ -1,15 +1,17 @@
 import { ContentMesh } from './content-mesh';
 import { DirectusService, DirectusServiceConfig, DirectusServiceAdaptor } from './directus-service';
 import { GatsbyProcessor, GatsbyProcessorConfig } from './gatsby-processor';
-import { log } from './utils';
+import { log, LogLevel } from './utils';
 
-export type PluginConfig = DirectusServiceConfig & GatsbyProcessorConfig;
+export type PluginConfig = DirectusServiceConfig & GatsbyProcessorConfig & { logLevel?: LogLevel };
 
 export const sourceNodes = async (
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   gatsby: any,
   config: PluginConfig,
 ): Promise<void> => {
+  log.setLogLevel(config.logLevel ?? LogLevel.INFO);
+
   log.info(`Validating config...`);
   log.info(`Starting...`);
 

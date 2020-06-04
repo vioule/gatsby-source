@@ -3,15 +3,35 @@ import Colors from 'colors'; // eslint-disable-line
 // Added so the 'Colors' import doesn't get removed for not being referenced.
 Colors.black;
 
+export enum LogLevel {
+  ALL = 1,
+  DEBUG,
+  INFO,
+  SUCCESS,
+  WARN,
+  ERROR,
+  NONE,
+}
+
 export const log = {
+  _logLevel: LogLevel.INFO,
+  setLogLevel: (level: LogLevel): void => {
+    log._logLevel = level;
+  },
+  getLogLevel: (): LogLevel => log._logLevel,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  debug: (msg: string, ...args: any[]): void => console.debug('debug'.gray, 'directus'.blue, msg, ...args),
+  debug: (...args: any[]): void =>
+    log._logLevel <= LogLevel.DEBUG ? console.debug('debug'.gray, 'directus'.blue, ...args) : void 0,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  info: (msg: string, ...args: any[]): void => console.log('info'.cyan, 'directus'.blue, msg, ...args),
+  info: (...args: any[]): void =>
+    log._logLevel <= LogLevel.INFO ? console.log('info'.cyan, 'directus'.blue, ...args) : void 0,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  warn: (msg: string, ...args: any[]): void => console.log('warning'.yellow, 'directus'.blue, msg, ...args),
+  warn: (...args: any[]): void =>
+    log._logLevel <= LogLevel.WARN ? console.log('warning'.yellow, 'directus'.blue, ...args) : void 0,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  error: (msg: string, ...args: any[]): void => console.error('error'.red, 'directus'.blue, msg, ...args),
+  error: (...args: any[]): void =>
+    log._logLevel <= LogLevel.ERROR ? console.error('error'.red, 'directus'.blue, ...args) : void 0,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  success: (msg: string, ...args: any[]): void => console.log('success'.green, 'directus'.blue, msg, ...args),
+  success: (...args: any[]): void =>
+    log._logLevel <= LogLevel.SUCCESS ? console.log('success'.green, 'directus'.blue, ...args) : void 0,
 };
