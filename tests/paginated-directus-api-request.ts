@@ -1,3 +1,5 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, @typescript-eslint/camelcase */
+
 import { IAPIMetaList, IAPIResponse } from '@directus/sdk-js/dist/types/schemes/APIResponse';
 import { PaginatedDirectusApiRequest } from '../src/directus-service/paginated-request';
 import { QueryParams } from '@directus/sdk-js/dist/types/schemes/http/Query';

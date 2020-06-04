@@ -77,6 +77,8 @@ export class ContentMesh {
         }
 
         return bag;
+
+        // eslint-disable-next-line @typescript-eslint/camelcase
       } else if (!field_many || !field_one) {
         log.debug(
           `Unable to create O2M relation. A source and/or dest field name is 'null'. This may be the result of a stale 'directus_relations' record.`,

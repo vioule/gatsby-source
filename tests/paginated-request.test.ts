@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any, @typescript-eslint/no-unused-vars, @typescript-eslint/camelcase */
 import { PageInfo, PaginatedRequest, PaginatedRequestConfig } from '../src/directus-service/paginated-request';
 
 type MockResponse = Readonly<{ data: MockAggregation; pageInfo: PageInfo }>;
@@ -38,7 +39,7 @@ class MockPaginatedRequest extends PaginatedRequest<MockAggregation, MockRespons
 
   public _sendNextRequest = jest.fn(
     async (_: PageInfo): Promise<MockResponse> => {
-      if (this.networkDelay > 0) await new Promise(r => setTimeout(() => r(), this.networkDelay));
+      if (this.networkDelay > 0) await new Promise((r) => setTimeout(() => r(), this.networkDelay));
       if (this.throwErrorOnRequest) return Promise.reject(this.throwErrorOnRequest);
       return Promise.resolve(this.mockResponses[this.currentRequestIndex++]);
     },
@@ -329,7 +330,7 @@ describe('PaginatedRequest', () => {
       Promise.race([
         mockRequest.finished(),
         // Resolve with timeout error as we're expecting a rejection.
-        new Promise(res => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
       ]),
     ).rejects.toBeInstanceOf(Error);
   });
@@ -358,7 +359,7 @@ describe('PaginatedRequest', () => {
       Promise.race([
         mockRequest.finished(),
         // Resolve with timeout error as we're expecting a rejection.
-        new Promise(res => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
       ]),
     ).rejects.toBeInstanceOf(Error);
   });
@@ -401,7 +402,7 @@ describe('PaginatedRequest', () => {
       Promise.race([
         mockRequest.finished(),
         // Resolve with timeout error as we're expecting a rejection.
-        new Promise(res => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
+        new Promise((res) => setTimeout(() => res(new Error('TIMEOUT')), 10 * 5000)),
       ]),
     ).rejects.toBeInstanceOf(Error);
   });
@@ -465,7 +466,7 @@ describe('PaginatedRequest', () => {
 
     expect.assertions(mocks.length);
 
-    await Promise.all(mocks.map(r => flushAll(r)));
+    await Promise.all(mocks.map((r) => flushAll(r)));
 
     for (const r of mocks) {
       expect(r.results()).toEqual(mockDataSet);

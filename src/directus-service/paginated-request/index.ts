@@ -30,7 +30,10 @@ export interface PaginatedRequestConfig {
    * A function called before each page request with the current pagination info.
    * A boolean can be returned to indicate if the request should continue.
    */
-  beforeNextPage?: (pageInfo: PageInfo, request: PaginatedRequest) => boolean;
+  // Cast 'request' to any, as 'this' will be used as the argument, and
+  // I couldn't get typing working correctly with subclasses
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  beforeNextPage?: (pageInfo: PageInfo, request: any) => boolean;
 }
 
 type PaginatedRequestState = 'complete::error' | 'complete::success' | 'queued' | 'started';
@@ -202,6 +205,8 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   }
 }
 
+type ModifiedIAPIMetaList = IAPIMetaList & { page: number; page_count: number };
+
 export interface PaginatedDirectusApiRequestConfig<T = unknown> extends PaginatedRequestConfig {
   chunkSize?: number;
   limit?: number;
@@ -280,8 +285,10 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
   protected _resolveNextPageInfo(currentPageInfo: PageInfo, response: IAPIResponse<T | T[], IAPIMetaList>): PageInfo {
     const {
       // eslint-disable-next-line @typescript-eslint/camelcase
-      meta: { result_count, page, page_count },
-    } = response as any;
+      result_count,
+      page,
+      page_count,
+    } = response.meta as ModifiedIAPIMetaList;
 
     // eslint-disable-next-line @typescript-eslint/camelcase
     if (typeof result_count !== 'number' || typeof page !== 'number' || typeof page_count !== 'number') {
@@ -296,15 +303,15 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
       // eslint-disable-next-line @typescript-eslint/camelcase
       currentOffset: nextOffset,
       // eslint-disable-next-line @typescript-eslint/camelcase
-      hasNextPage: this._resolveHasNextPage(nextOffset, response.meta),
+      hasNextPage: this._resolveHasNextPage(nextOffset, response.meta as ModifiedIAPIMetaList),
       // eslint-disable-next-line @typescript-eslint/camelcase
       resultCount: result_count,
       currentPage: page,
-      totalPageCount: this._resolveTotalPageCount(response.meta),
+      totalPageCount: this._resolveTotalPageCount(response.meta as ModifiedIAPIMetaList),
     };
   }
 
-  private _resolveHasNextPage(nextOffset: number, meta: any): boolean {
+  private _resolveHasNextPage(nextOffset: number, meta: ModifiedIAPIMetaList): boolean {
     if ((this.limit >= 0 && nextOffset >= this.limit) || meta.page >= meta.page_count) {
       return false;
     }
@@ -312,7 +319,7 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
     return this.chunkSize > 0;
   }
 
-  private _resolveTotalPageCount(meta: any): number {
+  private _resolveTotalPageCount(meta: ModifiedIAPIMetaList): number {
     if (this.limit >= 0 && this.chunkSize > 0) {
       return Math.ceil(this.limit / this.chunkSize);
     }

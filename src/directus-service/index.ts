@@ -50,6 +50,8 @@ export interface DirectusServiceAdaptor {
   batchGetRelations(): Promise<IRelation[]>;
   getAllFiles(): Promise<IFile[]>;
   getFilesCollection(): Promise<ICollectionDataSet>;
+
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
   batchGetCollectionRecords(collections: ICollectionDataSet[]): Promise<{ [collection: string]: any[] }>;
 }
 
@@ -362,24 +364,27 @@ export class DirectusService implements DirectusServiceAdaptor {
     }
   }
 
-  private _makePaginatedRequest<T extends IAPIResponse<{}>>(
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  private _makePaginatedRequest<T extends IAPIResponse<any, IAPIMetaList>>(
     id: string,
     chunkSize: number,
     limit: number,
     fn: (params: QueryParams) => Promise<T>,
   ): PaginatedDirectusApiRequest<T['data'] extends Array<infer J> ? J : T['data']> {
-    return new PaginatedDirectusApiRequest<T>({
+    return new PaginatedDirectusApiRequest<T['data'] extends Array<infer J> ? J : T['data']>({
       chunkSize,
       limit,
       timeout: this._apiRequestConfig.timeout,
-      makeApiRequest: (params: QueryParams): Promise<IAPIResponse<T, IAPIMetaList>> => fn(params) as any,
-      beforeNextPage: this._genBeforeNextPaginatedRequest(id) as any,
-    }) as any;
+      makeApiRequest: (
+        params: QueryParams,
+      ): Promise<IAPIResponse<T['data'] extends Array<infer J> ? J : T['data'], IAPIMetaList>> => fn(params),
+      beforeNextPage: this._genBeforeNextPaginatedRequest(id),
+    });
   }
 
   private _genBeforeNextPaginatedRequest = (reqId: string) => (
     { resultCount, totalPageCount, currentPage }: PageInfo,
-    req: PaginatedDirectusApiRequest<any>,
+    req: PaginatedDirectusApiRequest<unknown>,
   ): boolean => {
     this._totalResults += resultCount;
 

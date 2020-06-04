@@ -12,14 +12,13 @@ export interface RequestQueueConfig {
   throttle?: number;
 }
 
-export interface RequestQueue<T = any> {
+export interface RequestQueue<T = unknown> {
   enqueue(request: QueueableRequest<T>): void;
   flush(): Promise<void>;
   results(): T[];
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
-export class BasicRequestQueue<T = any> implements RequestQueue<T> {
+export class BasicRequestQueue<T = unknown> implements RequestQueue<T> {
   private _queue: QueueableRequest<T>[] = [];
   private _active: Promise<IteratorResult<T>>[] = [];
 
@@ -82,6 +81,7 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     while (this._queue.length) {
       // Fill up the active queue with queued requests.
       while (this._active.length < this._maxConcurrentRequests && this._queue.length) {
+        // eslint-disable-next-line @typescript-eslint/no-non-null-assertion
         this._activateRequest(this._queue.pop()!);
       }
 
@@ -120,7 +120,7 @@ export class BasicRequestQueue<T = any> implements RequestQueue<T> {
     this._failed.push(request);
   }
 
-  private _removeActive(request: Promise<IteratorResult<T, any>>): void {
+  private _removeActive(request: Promise<IteratorResult<T, void>>): void {
     this._active = this._active.filter((r) => r !== request);
   }
 }
