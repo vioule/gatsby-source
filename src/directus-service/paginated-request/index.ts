@@ -43,10 +43,10 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
   private _receivedError: Error | void = undefined;
   private _responseGenerator: AsyncGenerator<T>;
 
-  // @IsOptional()
-  // @IsInt({ message: 'Expected an integer, received $value' })
-  // @IsPositive({ message: 'Expected a positive number, received $value' })
-  // @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite number, received $value' })
+  @IsOptional()
+  @IsInt({ message: 'Expected an integer, received $value' })
+  @IsPositive({ message: 'Expected a positive number, received $value' })
+  @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite number, received $value' })
   private _timeout: number | void;
 
   private _beforeNextPage: (pageInfo: PageInfo, request: PaginatedRequest) => boolean = () => true;
@@ -63,12 +63,6 @@ export abstract class PaginatedRequest<T = unknown, R = unknown> implements Queu
     }
 
     this._timeout = config.timeout;
-
-    const validationErrors = validateSync(this);
-
-    if (validationErrors.length) {
-      throw new Error('Validation errors: \n' + validationErrors.join('\n'));
-    }
   }
 
   public async exec(): Promise<IteratorResult<T>> {
@@ -218,21 +212,21 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
   T[],
   IAPIResponse<T | T[], IAPIMetaList>
 > {
-  // @IsInt({ message: 'Expected an integer chunkSize, received $value' })
-  // @Min(0, { message: 'Expected a chunkSize >= 0, received $value' })
-  // @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite chunkSize, received $value' })
+  @IsInt({ message: 'Expected an integer chunkSize, received $value' })
+  @Min(0, { message: 'Expected a chunkSize >= 0, received $value' })
+  @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite chunkSize, received $value' })
   public readonly chunkSize: number = 0;
 
-  // @IsInt({ message: 'Expected an integer limit, received $value' })
-  // @Min(-1, { message: 'Expected a limit >= -1, received $value' })
-  // @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite limit, received $value' })
+  @IsInt({ message: 'Expected an integer limit, received $value' })
+  @Min(-1, { message: 'Expected a limit >= -1, received $value' })
+  @Max(Number.MAX_SAFE_INTEGER, { message: 'Expected a finite limit, received $value' })
   public readonly limit: number = -1;
 
   // We won't validate the initial params, a task that should be delegated to the
   // API service layer.
   private _initialParams: QueryParams;
 
-  // @IsDefined()
+  @IsDefined()
   private _makeApiRequest!: (params: QueryParams) => Promise<IAPIResponse<T | T[], IAPIMetaList>>;
 
   constructor({
@@ -287,6 +281,7 @@ export class PaginatedDirectusApiRequest<T = unknown> extends PaginatedRequest<
       // eslint-disable-next-line @typescript-eslint/camelcase
       result_count,
       page,
+      // eslint-disable-next-line @typescript-eslint/camelcase
       page_count,
     } = response.meta as ModifiedIAPIMetaList;
 

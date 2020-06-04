@@ -25,12 +25,12 @@ export class BasicRequestQueue<T = unknown> implements RequestQueue<T> {
   private _failed: QueueableRequest<T>[] = [];
   private _completed: QueueableRequest<T>[] = [];
 
-  // @IsInt({ message: 'Expected an integer maxConcurrentRequests, received $value' })
-  // @IsPositive({ message: 'Expected a positive maxConcurrentRequests, received $value' })
+  @IsInt({ message: 'Expected an integer maxConcurrentRequests, received $value' })
+  @IsPositive({ message: 'Expected a positive maxConcurrentRequests, received $value' })
   private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
 
-  // @IsInt({ message: 'Expected an integer throttle, received $value' })
-  // @Min(0, { message: 'Expected a throttle >= 0, received $value' })
+  @IsInt({ message: 'Expected an integer throttle, received $value' })
+  @Min(0, { message: 'Expected a throttle >= 0, received $value' })
   private _throttle = 0;
 
   private _currentFlush: Promise<void> | void = undefined;
