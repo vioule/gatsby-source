@@ -49,14 +49,14 @@ export class GatsbyProcessor {
       mesh
         .getCollections()
         .filter(({ isJunction }) => !isJunction || this._includeJunctions)
-        .map(collection => new GatsbyType(collection, this).buildNodes()),
+        .map((collection) => new GatsbyType(collection, this).buildNodes()),
     );
 
     return Promise.all(
       nodes
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         .reduce((flattened, nodes) => [...flattened, ...nodes], [] as any[])
-        .map(node => this.gatsby.actions.createNode(node)),
+        .map((node) => this.gatsby.actions.createNode(node)),
     );
   }
 
