@@ -39,7 +39,7 @@ export interface DirectusServiceConfig {
 
   apiRequestConfig?: ApiRequestConfig;
   globalQueryParams?: GlobalQueryParams;
-  collectionQueryParamOverrides?: { [collectionName: string]: CollectionSpecificQueryParams };
+  collectionSpecificQueryParams?: { [collectionName: string]: CollectionSpecificQueryParams };
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   customRecordFilter?: (record: any, collection: string) => boolean;
@@ -78,7 +78,6 @@ export class DirectusService implements DirectusServiceAdaptor {
   private _ready: Promise<void>;
 
   private _requestQueue: RequestQueue;
-  private _totalResults = 0;
 
   constructor(config: DirectusServiceConfig) {
     log.info('Initializing Directus Service...');
@@ -105,8 +104,8 @@ export class DirectusService implements DirectusServiceAdaptor {
       Object.assign(this._globalQueryParams, config.globalQueryParams);
     }
 
-    if (config.collectionQueryParamOverrides) {
-      Object.assign(this._collectionQueryParams, config.collectionQueryParamOverrides);
+    if (config.collectionSpecificQueryParams) {
+      Object.assign(this._collectionQueryParams, config.collectionSpecificQueryParams);
     }
 
     if (config.apiRequestConfig) {
@@ -383,11 +382,9 @@ export class DirectusService implements DirectusServiceAdaptor {
   }
 
   private _genBeforeNextPaginatedRequest = (reqId: string) => (
-    { resultCount, totalPageCount, currentPage }: PageInfo,
+    { totalPageCount, currentPage }: PageInfo,
     req: PaginatedDirectusApiRequest<unknown>,
   ): boolean => {
-    this._totalResults += resultCount;
-
     log.info(
       `Fetching ${reqId} ${
         totalPageCount > 0
