@@ -25,7 +25,6 @@ export class BasicRequestQueue<T = unknown> implements RequestQueue<T> {
   private _failed: QueueableRequest<T>[] = [];
   private _completed: QueueableRequest<T>[] = [];
 
-  @IsInt({ message: 'Expected an integer maxConcurrentRequests, received $value' })
   @IsPositive({ message: 'Expected a positive maxConcurrentRequests, received $value' })
   private _maxConcurrentRequests: number = Number.POSITIVE_INFINITY;
 
