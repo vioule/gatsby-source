@@ -4,20 +4,20 @@ import { ContentMesh } from '..';
 import { NodeRelation } from '../node-relation';
 
 export interface ContentRelationConfig {
-  srcField: string;
+  srcField: string | void;
   srcTable: ContentCollection;
 
-  destField: string;
+  destField: string | void;
   destTable: ContentCollection;
 
   mesh: ContentMesh;
 }
 
 export abstract class ContentRelation {
-  protected _srcField: string;
+  protected _srcField: string | void;
   protected _srcTable: ContentCollection;
 
-  protected _destField: string;
+  protected _destField: string | void;
   protected _destTable: ContentCollection;
 
   protected _mesh: ContentMesh;
@@ -40,9 +40,12 @@ export abstract class ContentRelation {
   protected _updateTable(table: ContentCollection, tableType: 'src' | 'dest'): void {
     if (!table.acceptsRelations()) return;
 
+    const field = tableType === 'src' ? this._srcField : this._destField;
+
+    if (!field) return;
+
     table.getNodes().forEach((node) => {
       const related = this._resolveNodeRelation(node, tableType);
-      const field = tableType === 'src' ? this._srcField : this._destField;
 
       if (related) {
         node.addRelation(

@@ -24,7 +24,7 @@ export class FileContentRelation extends ContentRelation {
 
   protected _resolveNodeRelation(node: ContentNode, tableType: 'src' | 'dest'): void | ContentNode | ContentNode[] {
     // We won't crete relations for the file nodes.
-    if (tableType === 'src') {
+    if (tableType === 'src' || !this._destField) {
       return;
     }
 

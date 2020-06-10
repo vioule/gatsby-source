@@ -9,9 +9,13 @@ export class SimpleContentRelation extends ContentRelation {
     super(config);
   }
 
-  protected _getRelatedRecords(targetId: string, tableType: 'src' | 'dest'): ContentNode[] {
+  protected _getRelatedRecords(targetId: string, tableType: 'src' | 'dest'): ContentNode[] | void {
     const destField = tableType === 'src' ? this._destField : this._srcField;
     const destTable = tableType === 'src' ? this._destTable : this._srcTable;
+
+    if (!destField) {
+      return;
+    }
 
     return destTable.getNodes().filter((n) => n.contents[destField] === targetId);
   }
@@ -23,11 +27,15 @@ export class SimpleContentRelation extends ContentRelation {
       log.debug(
         `Resolved O2M node relations for ${this._srcTable.name}:${node.primaryKey}:${this._srcField} <-> ${
           this._destTable.name
-        }:[${related.map((p) => p.primaryKey).join(', ')}]:${this._destField}`,
+        }:[${related ? related.map((p) => p.primaryKey).join(', ') : 'NONE'}]:${this._destField}`,
       );
 
       return related;
     } else {
+      if (!this._destField) {
+        return;
+      }
+
       const existing = node.contents[this._destField];
 
       if (existing) {

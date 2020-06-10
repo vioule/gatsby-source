@@ -79,7 +79,7 @@ export class ContentMesh {
         return bag;
 
         // eslint-disable-next-line @typescript-eslint/camelcase
-      } else if (!field_many || !field_one) {
+      } else if (!field_many && !field_one) {
         log.debug(
           `Unable to create O2M relation. A source and/or dest field name is 'null'. This may be the result of a stale 'directus_relations' record.`,
           {
@@ -158,7 +158,7 @@ export class ContentMesh {
         });
         log.warn('This may be a result of Directus keeping deleted junction information in internal tables.');
         return bag;
-      } else if (!a.field_one || !b.field_one || !a.junction_field || !b.junction_field) {
+      } else if ((!a.field_one && !b.field_one) || !a.junction_field || !b.junction_field) {
         log.debug(
           `Unable to create M2M relation. A source and/or dest field name is 'null'. This may be the result of a stale '${junctionTable.name}' records`,
           {
