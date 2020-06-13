@@ -37,14 +37,15 @@ export abstract class ContentRelation {
     tableType: 'src' | 'dest',
   ): void | ContentNode | ContentNode[];
 
-  protected _updateTable(table: ContentCollection, tableType: 'src' | 'dest'): void {
-    if (!table.acceptsRelations()) return;
+  protected _resolveRelatedCollection(_: ContentNode, tableType: 'src' | 'dest'): ContentCollection {
+    return tableType === 'src' ? this._destTable : this._srcTable;
+  }
 
+  protected _updateTable(table: ContentCollection, tableType: 'src' | 'dest'): void {
     const field = tableType === 'src' ? this._srcField : this._destField;
 
-    if (!field) return;
-
     table.getNodes().forEach((node) => {
+      const relatedCollection = this._resolveRelatedCollection(node, tableType);
       const related = this._resolveNodeRelation(node, tableType);
 
       if (related) {
@@ -52,6 +53,7 @@ export abstract class ContentRelation {
           new NodeRelation({
             field,
             related,
+            relatedCollection,
           }),
         );
       }

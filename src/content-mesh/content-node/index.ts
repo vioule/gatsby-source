@@ -13,7 +13,7 @@ export class ContentNode {
   private _record: any;
   private _collection: ContentCollection;
   private _primaryKeyFieldName: string;
-  private _relations: { [fieldId: string]: NodeRelation } = {};
+  private _relations: NodeRelation[] = [];
 
   constructor(config: ContentNodeConfig) {
     this._record = config.record;
@@ -31,11 +31,17 @@ export class ContentNode {
   }
 
   public addRelation(relation: NodeRelation): void {
-    this._relations[relation.field] = relation;
+    this._relations.push(relation);
   }
 
-  public getRelations(): { [fieldId: string]: NodeRelation } {
+  public getRelations(): NodeRelation[] {
     return this._relations;
+  }
+
+  public getRelatedCollections(): ContentCollection[] {
+    const unique = new Set<ContentCollection>();
+    this._relations.forEach((c) => unique.add(c.getRelatedCollection()));
+    return Array.from(unique);
   }
 
   public getCollection(): ContentCollection {

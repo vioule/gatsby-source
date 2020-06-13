@@ -1,8 +1,8 @@
-import { ContentNode } from '../../content-mesh';
-import { GatsbyType } from '../gatsby-type';
-import { GatsbyProcessor } from '..';
 import { createRemoteFileNode } from 'gatsby-source-filesystem';
+import { GatsbyProcessor } from '..';
+import { ContentNode } from '../../content-mesh';
 import { log } from '../../utils';
+import { GatsbyType } from '../gatsby-type';
 
 export class GatsbyNode {
   protected _node: ContentNode;
@@ -13,7 +13,11 @@ export class GatsbyNode {
     this._processor = processor;
   }
 
-  public getIds(node: ContentNode | ContentNode[]): string | string[] {
+  public getIds(node: void | ContentNode | ContentNode[]): null | string | string[] {
+    if (!node) {
+      return null;
+    }
+
     if (Array.isArray(node)) {
       return node.map((node) => this._resolveId(node));
     }
@@ -31,14 +35,16 @@ export class GatsbyNode {
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   private _mixinRelations(contents: any): any {
-    return Object.entries(this._node.getRelations()).reduce(
-      (newContents, [field, relation]) => {
-        delete newContents[field];
+    return this._node.getRelations().reduce(
+      (newContents, relation) => {
+        const { field } = relation;
 
-        const relatedNodes = relation.getRelatedNodes();
-        const newFieldName = GatsbyNode._formatFieldName(field);
-
-        newContents[newFieldName] = this.getIds(relatedNodes);
+        if (field) {
+          const relatedNodes = relation.getRelatedNodes();
+          delete newContents[field];
+          const newFieldName = GatsbyNode._formatFieldName(field);
+          newContents[newFieldName] = this.getIds(relatedNodes);
+        }
 
         return newContents;
       },
@@ -49,16 +55,10 @@ export class GatsbyNode {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public async build(): Promise<any> {
     // Ensure ID field is set to the primary key.
-    const contents = {
-      ...this._node.contents,
+    return {
+      ...this._mixinRelations(this._node.contents),
       id: this._node.primaryKey,
     };
-
-    if (this._node.getCollection().acceptsRelations()) {
-      return this._mixinRelations(contents);
-    }
-
-    return contents;
   }
 }
 
@@ -67,21 +67,23 @@ export class GatsbyFileNode extends GatsbyNode {
   public async build(): Promise<any> {
     const localNode = await super.build();
 
-    try {
-      const remoteNode = await createRemoteFileNode({
-        store: this._processor.gatsby.store,
-        cache: this._processor.gatsby.cache,
-        createNode: this._processor.gatsby.actions.createNode,
-        createNodeId: this._processor.gatsby.createNodeId,
-        reporter: this._processor.gatsby.reporter,
-        url: localNode.data.full_url,
-      });
+    if (this._processor.shouldDownloadFile(this._node)) {
+      try {
+        const remoteNode = await createRemoteFileNode({
+          store: this._processor.gatsby.store,
+          cache: this._processor.gatsby.cache,
+          createNode: this._processor.gatsby.actions.createNode,
+          createNodeId: this._processor.gatsby.createNodeId,
+          reporter: this._processor.gatsby.reporter,
+          url: localNode.data.full_url,
+        });
 
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/camelcase
-      localNode.localFile___NODE = (remoteNode as any).id;
-    } catch (e) {
-      log.error(`Failed to download remote file: ${localNode.data.full_url}`);
-      log.error('File will not be available through transforms.');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any, @typescript-eslint/camelcase
+        localNode.localFile___NODE = (remoteNode as any).id;
+      } catch (e) {
+        log.error(`Failed to download remote file: ${localNode.data.full_url}`);
+        log.error('File will not be available through transforms.');
+      }
     }
 
     return localNode;

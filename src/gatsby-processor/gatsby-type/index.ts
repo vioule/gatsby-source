@@ -26,7 +26,7 @@ export class GatsbyType {
 
   private _initNodes(nodes: ContentNode[] = []): GatsbyNode[] {
     return nodes.map((node) => {
-      if (this._collection.isFileCollection && this._processor.downloadFiles) {
+      if (this._collection.isFileCollection) {
         return new GatsbyFileNode(node, this._processor);
       }
 

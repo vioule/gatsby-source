@@ -1,17 +1,18 @@
 import createNodeHelpers from 'gatsby-node-helpers';
-import { ContentMesh } from '../content-mesh';
+import { ContentMesh, ContentNode } from '../content-mesh';
 import { GatsbyType } from './gatsby-type';
+import { IFile } from '@directus/sdk-js/dist/types/schemes/directus/File';
 
 export interface GatsbyProcessorConfig {
   typePrefix?: string;
   includeJunctions?: boolean;
-  downloadFiles?: boolean;
+  downloadFiles?: boolean | ((relatedCollections: string[], fileRec: IFile) => boolean);
 }
 
 export class GatsbyProcessor {
   private _typePrefix = 'Directus';
   private _includeJunctions = false;
-  private _downloadFiles = true;
+  private _downloadFiles: boolean | ((relatedCollections: string[], fileRec: IFile) => boolean) = true;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   public gatsby: any;
@@ -30,7 +31,7 @@ export class GatsbyProcessor {
       this._includeJunctions = config.includeJunctions;
     }
 
-    if (typeof config.downloadFiles === 'boolean') {
+    if (typeof config.downloadFiles === 'boolean' || typeof config.downloadFiles === 'function') {
       this._downloadFiles = config.downloadFiles;
     }
 
@@ -60,7 +61,12 @@ export class GatsbyProcessor {
     );
   }
 
-  public get downloadFiles(): boolean {
+  public shouldDownloadFile(node: ContentNode): boolean {
+    if (typeof this._downloadFiles === 'function') {
+      const relatedCollections = node.getRelatedCollections().map((n) => n.name);
+      return this._downloadFiles(relatedCollections, node.contents);
+    }
+
     return this._downloadFiles;
   }
 }
