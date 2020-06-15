@@ -37,7 +37,7 @@
   },
   "homepage": "https://github.com/directus/gatsby-source#readme",
   "dependencies": {
-    "@directus/sdk-js": "^6.1.1",
+    "@directus/sdk-js": "^6.2.0",
     "colors": "^1.4.0",
     "gatsby-node-helpers": "^0.3.0",
     "gatsby-source-filesystem": "^2.3.11",
