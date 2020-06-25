@@ -51,7 +51,7 @@
     "@typescript-eslint/parser": "^2.34.0",
     "axios": "^0.19.2",
     "eslint": "^7.3.0",
-    "eslint-plugin-jest": "^23.13.2",
+    "eslint-plugin-jest": "^23.17.1",
     "husky": "^4.2.5",
     "jest": "^26.1.0",
     "lint-staged": "^10.2.10",
