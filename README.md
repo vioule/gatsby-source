@@ -20,7 +20,7 @@ Inspired by the [gatsby-source-directus7](https://github.com/Jonesus/gatsby-sour
 
 - Exposes all custom content types & associated records created in Directus as distinct nodes in the Gatsby GraphQL layer
 - Mirrors O2M, M2O, M2M, and "File" relations between content types in Directus in the Graph QL layer
-- Downloads files hosted in Directus for usage with other [Gatsby transformer plugins](https://www.gatsbyjs.org/plugins/?=gatsby-transformer)
+- Downloads files hosted in Directus using [gatsby-source-filesystem](https://github.com/gatsbyjs/gatsby/tree/master/packages/gatsby-source-filesystem) for usage with other [Gatsby transformer plugins](https://www.gatsbyjs.org/plugins/?=gatsby-transformer)
 
 ## Installation
 
