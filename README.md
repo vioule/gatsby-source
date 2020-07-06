@@ -53,9 +53,13 @@ For the a collection type to exist in the GraphQL layer, there must be at least 
 
 E.g. if either no records exist for the collection, or they are all filtered by the plugin configuration, that collection will **not** appear in the GraphQL layer, and any attempts to query against it will throw an error.
 
+A workaround for simple fields is described in [issue #38](https://github.com/directus/gatsby-source/issues/38#issuecomment-594772507).
+
 Similarly, for a field defined as a M2O, O2M, M2M, or File(s) relation to exist in the GraphQL schema for a given collection, there must exist **at least one** record that has a non-null value for that field. Attempts to query fields where no relations have been defined in Directus will throw an error.
 
 E.g. if we have a `products` collection in Directus that has a `reviews` field defined as a O2M relation to a `review` collection, if **all** `products` have no `reviews`, the `reviews` field will not be available in the `directusProducts` GraphQL schema, and attempts to execute a `query { directusProducts { reviews { ... } } }` query will throw an error.
+
+We do not currently have a workaround for this case.
 
 ## Development
 
